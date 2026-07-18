@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import {
   AlreadyAnsweredError,
   isAnswered,
+  isTemplatePlaceholder,
+  NotesConflictError,
   parseQuestion,
   serializeAnswer,
+  StaleQuestionError,
 } from "../src/lib/question";
 
 const LF_FIXTURE =
@@ -179,4 +182,93 @@ test("file without front-matter or sections parses without crashing", () => {
   assert.equal(q.title, "");
   assert.equal(q.options.length, 0);
   assert.equal(q.answeredIndex, null);
+});
+
+// --- adversarial-review regressions ---
+
+const CATALOG_LINE = "- [ ] **Catalog #** — exact, no false merges *(recommended)*";
+const NAME_LINE = "- [ ] **Name** — catches typo'd catalog numbers";
+
+test("identity guard: an option reorder between render and submit is rejected", () => {
+  const rendered = parseQuestion(LF_FIXTURE);
+  const clickedText = rendered.options[1].text; // **Name** …
+  // Dispatcher status sweep reorders recommended-first equivalent: swap 0 and 1.
+  const mutated = LF_FIXTURE.replace(
+    `${CATALOG_LINE}\n${NAME_LINE}`,
+    `${NAME_LINE}\n${CATALOG_LINE}`,
+  );
+  assert.notEqual(mutated, LF_FIXTURE, "fixture mutation must apply");
+  // Same index now holds a different option → refuse, never silently mis-tick.
+  assert.throws(() => serializeAnswer(mutated, 1, "", { expectedOptionText: clickedText }), StaleQuestionError);
+  // The identity check keys on text, so the option at its NEW index is fine.
+  const ok = serializeAnswer(mutated, 0, "", { expectedOptionText: clickedText });
+  assert.equal(parseQuestion(ok).options[0].checked, true);
+});
+
+test("notes guard: concurrently written notes are a conflict, never an overwrite", () => {
+  const baselineAtRender = parseQuestion(LF_FIXTURE).notes; // ""
+  const fileGainedNotes = LF_FIXTURE + "Concurrent note from the dispatcher.\n";
+  assert.throws(
+    () => serializeAnswer(fileGainedNotes, 0, "my stale typed notes", { notesBaseline: baselineAtRender }),
+    NotesConflictError,
+  );
+  // Submitting exactly what the file now holds is not a conflict…
+  const same = serializeAnswer(fileGainedNotes, 0, "Concurrent note from the dispatcher.", {
+    notesBaseline: baselineAtRender,
+  });
+  assert.ok(same.includes("Concurrent note from the dispatcher."));
+  // …and an unchanged file accepts freshly typed notes.
+  const fresh = serializeAnswer(LF_FIXTURE, 0, "fresh notes", { notesBaseline: baselineAtRender });
+  assert.ok(fresh.endsWith("fresh notes\n"));
+});
+
+test("multi-tick answers surface every ticked option, case-insensitively", () => {
+  const multi = LF_FIXTURE.replace("- [ ] **Catalog #**", "- [x] **Catalog #**").replace(
+    "- [ ] **Both**",
+    "- [X] **Both**",
+  );
+  const q = parseQuestion(multi);
+  assert.deepEqual(q.answeredIndices, [0, 2]);
+  assert.equal(q.answeredIndex, 0);
+  assert.equal(isAnswered(multi), true);
+});
+
+test("multi-tick: submitting a ticked option is a no-op; an unticked one still throws", () => {
+  const multi = LF_FIXTURE.replace("- [ ] **Catalog #**", "- [x] **Catalog #**").replace(
+    "- [ ] **Both**",
+    "- [X] **Both**",
+  );
+  assert.equal(serializeAnswer(multi, 2, ""), multi);
+  assert.equal(serializeAnswer(multi, 0, ""), multi);
+  assert.throws(() => serializeAnswer(multi, 1, ""), AlreadyAnsweredError);
+});
+
+test("template placeholder signature is detected; real questions are not", () => {
+  const template =
+    [
+      "---",
+      "task: <taskid>",
+      "agent: <agentName from your current STATUS.json>",
+      "title: <the question — one sentence, ≤15 words, one decision, ends in ?>",
+      "blocking: true|false",
+      "asked: <ISO now>",
+      "---",
+      "",
+      "## Context",
+      "<≤1 short paragraph.>",
+      "",
+      "## Options",
+      "- [ ] **<label ≤5 words>** — <why, ≤10 words> *(recommended)*",
+      "- [ ] **<label>** — <why>",
+      "",
+      "## Notes",
+    ].join("\n") + "\n";
+  assert.equal(isTemplatePlaceholder(parseQuestion(template)), true);
+  assert.equal(isTemplatePlaceholder(parseQuestion(LF_FIXTURE)), false);
+  // A placeholder title alone is enough to lock the file.
+  const titleOnly = LF_FIXTURE.replace(
+    "title: Match duplicate suppliers on catalog number or name?",
+    "title: <fill me in>",
+  );
+  assert.equal(isTemplatePlaceholder(parseQuestion(titleOnly)), true);
 });

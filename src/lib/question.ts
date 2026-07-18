@@ -26,8 +26,14 @@ export interface ParsedQuestion {
   options: QuestionOption[];
   /** Trimmed current contents of the `## Notes` body. */
   notes: string;
-  /** Index of the ticked option, or null when unanswered. */
+  /** First ticked option, or null when unanswered. Prefer answeredIndices. */
   answeredIndex: number | null;
+  /**
+   * Every ticked option, in file order. More than one `[x]` is legal — the
+   * author wants all of them, as joint constraints (protocol §6.3). Ticks are
+   * case-insensitive (`[x]` or `[X]`).
+   */
+  answeredIndices: number[];
   /** Index of the first option marked `*(recommended)*`, or null. */
   recommendedIndex: number | null;
   /** Dominant line ending of the file. */
@@ -45,6 +51,35 @@ export class AlreadyAnsweredError extends Error {
     super(message);
     this.name = "AlreadyAnsweredError";
   }
+}
+
+/** The file's options no longer match what the author was shown. */
+export class StaleQuestionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StaleQuestionError";
+  }
+}
+
+/** The file's Notes changed underneath the author's draft. */
+export class NotesConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NotesConflictError";
+  }
+}
+
+/**
+ * Optional consistency guards for serializeAnswer, captured when the question
+ * was rendered. They defend against the file being rewritten in place between
+ * render and submit (the protocol sanctions such rewrites — e.g. dispatcher
+ * status sweeps reorder options recommended-first).
+ */
+export interface SerializeGuards {
+  /** Parsed text of the option the author clicked, captured at render time. */
+  expectedOptionText?: string;
+  /** The file's Notes body (trimmed) at render time. */
+  notesBaseline?: string;
 }
 
 interface Line {
@@ -157,7 +192,12 @@ export function parseQuestion(raw: string): ParsedQuestion {
     }
   }
 
-  const answered = options.findIndex((o) => o.checked);
+  const answeredIndices: number[] = [];
+  options.forEach((o, i) => {
+    if (o.checked) {
+      answeredIndices.push(i);
+    }
+  });
   const recommended = options.findIndex((o) => o.recommended);
   return {
     frontmatter: data,
@@ -165,7 +205,8 @@ export function parseQuestion(raw: string): ParsedQuestion {
     context: contextParts.join("\n").trim(),
     options,
     notes: notesParts.join("\n").trim(),
-    answeredIndex: answered === -1 ? null : answered,
+    answeredIndex: answeredIndices.length > 0 ? answeredIndices[0] : null,
+    answeredIndices,
     recommendedIndex: recommended === -1 ? null : recommended,
     eol,
     notesBodyStart,
@@ -175,7 +216,18 @@ export function parseQuestion(raw: string): ParsedQuestion {
 }
 
 export function isAnswered(raw: string): boolean {
-  return parseQuestion(raw).answeredIndex !== null;
+  return parseQuestion(raw).answeredIndices.length > 0;
+}
+
+/**
+ * True when the content still matches the question-template placeholder
+ * signature (title starting with `<`, option labels starting `**<`) — a
+ * half-filled template copy that must get no toast and no Submit. The
+ * protocol makes queue files appear atomically (fill `.<name>.md.tmp`, then
+ * rename), so this is defense in depth.
+ */
+export function isTemplatePlaceholder(q: ParsedQuestion): boolean {
+  return q.title.trim().startsWith("<") || q.options.some((o) => o.text.startsWith("**<"));
 }
 
 /**
@@ -184,18 +236,44 @@ export function isAnswered(raw: string): boolean {
  * the notes body region is preserved exactly (CRLF/LF, BOM, trailing
  * whitespace — everything).
  *
- * Throws RangeError for an out-of-range option, AlreadyAnsweredError when a
- * *different* option is already ticked (re-submitting the same one is a no-op
- * for the checkbox).
+ * Throws:
+ * - RangeError for an out-of-range option index;
+ * - StaleQuestionError when `guards.expectedOptionText` is given and the
+ *   option at `optionIndex` no longer carries that text (the file was
+ *   rewritten — e.g. options reordered — between render and submit);
+ * - AlreadyAnsweredError when the submitted option is unticked but another
+ *   option is ticked (submitting an already-ticked option is a checkbox
+ *   no-op — legal, including in multi-tick files);
+ * - NotesConflictError when `guards.notesBaseline` is given and the file's
+ *   current Notes differ from both the baseline and the submitted text
+ *   (someone wrote notes concurrently — never clobber them).
  */
-export function serializeAnswer(raw: string, optionIndex: number, notes: string): string {
+export function serializeAnswer(
+  raw: string,
+  optionIndex: number,
+  notes: string,
+  guards?: SerializeGuards,
+): string {
   const q = parseQuestion(raw);
   const opt = q.options[optionIndex];
   if (!opt) {
     throw new RangeError(`option index ${optionIndex} out of range (${q.options.length} options)`);
   }
-  if (q.answeredIndex !== null && q.answeredIndex !== optionIndex) {
+  if (guards?.expectedOptionText !== undefined && opt.text !== guards.expectedOptionText) {
+    throw new StaleQuestionError(
+      `option ${optionIndex} is now "${opt.text}" but "${guards.expectedOptionText}" was rendered — the file changed on disk`,
+    );
+  }
+  if (!opt.checked && q.answeredIndices.length > 0) {
     throw new AlreadyAnsweredError("a different option is already ticked");
+  }
+  if (guards?.notesBaseline !== undefined) {
+    const submitted = notes.trim();
+    if (q.notes !== guards.notesBaseline && q.notes !== submitted) {
+      throw new NotesConflictError(
+        "the file's Notes changed since the question was rendered — refusing to overwrite them",
+      );
+    }
   }
 
   interface TextEdit {
