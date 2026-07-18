@@ -393,6 +393,35 @@ Confirmed against current docs. **Re-verify the exact API surface against the
 installed package's `.d.ts` before coding against it** — treat the below as
 "this capability exists, go find its current shape."
 
+### 4.0 Verified live on this machine (2026-07-18, before the run)
+
+A real agent was spawned end-to-end on the author's machine. Do not re-derive
+these; do re-check the version numbers.
+
+- `@anthropic-ai/claude-agent-sdk` **v0.3.214** installs cleanly; Claude Code CLI
+  **2.1.214** is on `PATH` at `~/AppData/Roaming/npm/claude`, so
+  `pathToClaudeCodeExecutable` is not needed.
+- `query({ prompt, options })` spawns and completes. `ANTHROPIC_API_KEY` is
+  **unset**, so it authenticates via the subscription login — confirmed working.
+  (Still detect the key at runtime and warn if it appears; it silently changes
+  who gets billed.)
+- Message shapes confirmed: a `system`/`init` message carrying `session_id`;
+  `assistant` messages with `message.content[]` blocks; a terminal `result`
+  message with `subtype: "success"`, `total_cost_usd`, and `modelUsage` keyed by
+  model id.
+- **Cold spawn ≈ 3.6 s** for a trivial prompt.
+- **Fixed overhead per agent ≈ $0.32 estimated**, for a prompt whose answer was
+  the two characters `OK`. That is the Claude Code system prompt and tool
+  definitions being loaded on every single spawn, and it is the most important
+  number here: **agent cost is dominated by a per-spawn constant, not by task
+  size.** Design accordingly — prefer steering a live session over spawning a
+  fresh one, and treat "spawn 12 agents to see what happens" as expensive.
+  Feed this into Spike A's concurrency ceiling, and remember that on a
+  subscription it draws down usage rather than dollars.
+- The spawned agent **inherited the parent session's model** (`claude-opus-4-8`).
+  Model is therefore **not** implicitly the fleet default — set `model`
+  explicitly on every `query()` call, or the ladder in §0.5 silently won't apply.
+
 - **Package:** `@anthropic-ai/claude-agent-sdk`; `query({ prompt, options })`
   returns an async generator of messages, spawning a Claude Code subprocess.
 - **Auth is inherited** from the user's `/login` — no API key needed. Caveat:
