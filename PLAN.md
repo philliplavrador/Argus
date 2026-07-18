@@ -9,6 +9,109 @@ primary · Author: Phillip Lavrador
 
 ---
 
+## 0. How this build runs — READ FIRST
+
+**This is an overnight unattended build.** The author will answer questions,
+say "begin," and then go to sleep. They return the next morning. From "begin"
+until morning there is **nobody to ask**. Structure your entire session around
+that fact.
+
+### 0.1 Before "begin": ask everything, in one batch
+
+Read this whole document first. Most decisions are already made in it — do not
+re-ask those. Then ask the author, in **one** batch, only what remains
+unanswered and would genuinely change the build. The list below is what is
+expected to remain; drop any you can answer from this document, and add any real
+fork you find while reading.
+
+1. **Test target.** Acceptance requires driving Argus against a real large repo.
+   Which repo, at which absolute path, and is it safe to create worktrees and
+   throwaway branches in it? *(If the answer is "none available," you must
+   synthesize a large fixture repo — say so and get agreement before "begin.")*
+2. **Budget ceiling** for the whole overnight run, in USD. Hard stop.
+3. **Branch strategy** — build straight on `main`, or on a `v2` branch merged in
+   the morning?
+4. **Build-agent model and effort** for your own subagents — this drives most of
+   the cost.
+5. **Auth durability** — will the author's Claude Code login still be valid
+   overnight, and does spawning agents from the SDK work right now? *Verify this
+   live before they sleep, not at 2am.*
+6. **Permission posture.** Unattended means a permission prompt at 2am stalls
+   until morning. Confirm what the author has configured and what you may run
+   without asking. **Do not propose or enable any permission bypass yourself** —
+   this is the author's decision to make and configure, and if they decline,
+   scope your work to what runs within the permissions you have.
+
+Present the batch, let them answer, and **restate the resolved decisions back to
+them in one short block** before they say "begin." When they say begin, they
+leave. Do not ask anything after that point.
+
+### 0.2 After "begin": never block, always decide
+
+- **`AskUserQuestion` is forbidden after "begin."** A blocked question wastes the
+  entire night.
+- When you hit a genuine fork, **make the reversible choice**, write it to
+  `.argus-build/decisions.md` with the reasoning and what you'd need to revisit
+  it, and keep moving. A documented decision you can undo in the morning is worth
+  infinitely more than a stalled session.
+- **Time-box every phase.** If a phase runs past ~90 minutes without landing, cut
+  scope to the smallest working version, log what you cut, and move on. Do not
+  spend four hours on Windows worktree edge cases — log the failure, stub the
+  path, continue.
+- **Never leave `main` broken.** Every phase commit must typecheck and pass
+  tests. If a phase can't get there, commit it on a side branch and note it.
+- **Pre-authorized fallbacks** — these forks are decided in advance so you never
+  need to ask:
+  - *Spike B fails (blocking `canUseTool` doesn't hold a session):* fall back to
+    abort + `resume` with the answer injected. Build the inbox against an
+    interface that hides which mechanism is used. Flag it prominently in the
+    morning report — it changes latency and cost, not feasibility.
+  - *Spike C says per-worktree `node_modules` is expensive:* worktrees still
+    ship; note that v2.2 live preview is at risk and why.
+  - *Spike A shows a low concurrency ceiling:* set the cap low and make it a
+    setting. Do not redesign.
+  - *SDK API surface differs from §4:* trust the installed `.d.ts` over this
+    document, and record the deltas.
+  - *A UI tab won't finish:* ship Fleet and Inbox complete over Timeline and
+    Settings partial. See the priority order below.
+
+### 0.3 Build a vertical slice first, then widen
+
+**An 8-hour unattended run will not produce all of v2.0. Plan for that, and
+control what the 60% looks like.** Six half-finished modules that don't talk to
+each other is a bad morning. One thing that genuinely works end-to-end is a good
+one. Strict priority:
+
+1. **The slice:** one task can be created, gets a worktree, runs a real agent,
+   streams progress to the Fleet tab, asks a question, shows a ★, and resumes
+   when answered from the Inbox. *This alone is a successful night.*
+2. Multiple concurrent tasks, scope enforcement + escalation.
+3. Settings tab, budget/spend, persistence and replay.
+4. Timeline tab, merge queue, `collisionReport`.
+5. Polish, docs, `.vsix` packaging.
+
+Do not start item N+1 until item N actually runs. Resist building all the pure
+modules first because they're pleasant to build — they are worthless until
+something calls them.
+
+### 0.4 The morning report
+
+Last thing you do: write `.argus-build/REPORT.md` and make it the final commit's
+subject. The author reads this before anything else. It must contain:
+
+- **What works** — with the exact commands to see each thing working.
+- **What doesn't**, and how far it got.
+- **Every decision** from `decisions.md`, with the ones worth revisiting flagged.
+- **What the spikes found**, especially anything that contradicts this plan.
+- **Total spend** versus the ceiling.
+- **The single next thing** to do.
+
+Be exact about what you could not verify. An honest "the merge queue is written
+but never ran against a real conflict" is useful. A confident "merge queue works"
+that turns out to be false costs more than the whole night was worth.
+
+---
+
 ## 1. The one sentence that governs every decision
 
 > **Argus exists so that one person can run several Claude Code agents against
@@ -355,11 +458,68 @@ what justifies the append-only log. Cheap once the log exists; don't skip it.
 - **Auto-merge** on/off; the repo's verify command.
 - A read-only preview of the resolved system prompt, so settings aren't magic.
 
-**Design:** theme via `var(--vscode-*)` tokens — must look native in light, dark,
-and high-contrast. Strict CSP, everything bundled, no CDN. Do not ship
-React+Tailwind for four tabs unless you can justify it on build time and bundle
-size; plain TypeScript rendering from a state snapshot is likely correct and
-makes "close and re-render from scratch" trivial.
+### 10.1 Visual design — Claude's language, product UI not terminal UI
+
+Argus should look like it belongs next to Claude Code, not like a dev tool
+someone bolted into a sidebar. Two directives, and they pull against each other
+in one specific place — resolve it the way described below.
+
+**Palette: Claude's warm identity, in both light and dark.** Do not hard-code a
+cream-and-orange sheet — it looks foreign inside a dark VS Code theme. Instead,
+take Claude's *accent and warmth* as the identity and derive both modes. Define
+these as CSS custom properties in one place and reference them everywhere:
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--argus-accent` | `#D97757` | `#D97757` | The single accent. ★, primary buttons, active tab, progress fill, focus rings. Same in both modes — it's the brand. |
+| `--argus-accent-hover` | `#C86546` | `#E08D6F` | Hover/pressed |
+| `--argus-accent-subtle` | `#D9775714` | `#D9775722` | Selected row wash, badge backgrounds |
+| `--argus-bg` | `#FAF9F5` | `#1F1E1D` | Panel background |
+| `--argus-surface` | `#FFFFFF` | `#262624` | Cards, rows |
+| `--argus-surface-raised` | `#F0EEE6` | `#30302E` | Hover, elevated, inbox item |
+| `--argus-border` | `#E5E2DA` | `#3A3936` | Hairlines |
+| `--argus-text` | `#1F1E1D` | `#F5F4EF` | Primary text |
+| `--argus-text-muted` | `#6B6862` | `#A8A49B` | Secondary, timestamps, paths |
+| `--argus-success` | `#3D8F5F` | `#5FB37F` | Passed gates, DONE |
+| `--argus-warn` | `#B07B2E` | `#D9A04E` | Blocked, waiting |
+| `--argus-danger` | `#B3453A` | `#E0685C` | Failed, denied |
+
+Note the neutrals are **warm** (yellow-shifted), not VS Code's cool grays. That
+warmth is most of what makes something read as "Claude" before you notice the
+orange. Switch modes off `prefers-color-scheme` **and** VS Code's
+`body.vscode-dark` / `body.vscode-light` / `body.vscode-high-contrast` classes —
+VS Code's class is authoritative when present. In high-contrast, drop the custom
+palette and fall back to `var(--vscode-*)` tokens; accessibility beats brand.
+
+**"Less terminal, more UI."** Concretely, that means:
+
+- **Proportional type for content, monospace only for what is literally code** —
+  file paths, globs, diffs, command names. Task titles, questions, options, and
+  labels are all proportional. This single change does more than anything else to
+  kill the terminal feel. Use the system stack (`ui-sans-serif, -apple-system,
+  "Segoe UI", …`); do not attempt to ship Anthropic's brand fonts, they aren't
+  licensed for redistribution.
+- **Cards with breathing room, not dense rows.** A task is a card with ~14–16px
+  internal padding and 8px between cards, not a 22px tree row. You are showing
+  three to four tasks, not four hundred — spend the space.
+- **8px spacing scale**, 8–10px corner radius, 1px hairline borders, and a very
+  soft shadow on raised surfaces only. No heavy borders, no gradients, no glass.
+- **Motion is short and purposeful:** 120–160ms ease-out on hover, state change,
+  and tab switch. Progress bars animate their fill. Nothing bounces. Respect
+  `prefers-reduced-motion`.
+- **Phase pills** — small rounded chips with a tinted background from the status
+  colors above, not colored text.
+- **The ★ is the one place you may be loud.** Accent fill, a single gentle pulse
+  on arrival, then static. It is the most important pixel in the product.
+- **Empty states get real copy**, not a blank pane: what this tab shows and the
+  one action that fills it.
+
+**Implementation:** strict CSP, everything bundled, no CDN, no webfonts. Do not
+ship React+Tailwind for four tabs unless you can justify it on build time and
+bundle size — plain TypeScript rendering from a state snapshot is likely correct
+here and makes the "close and re-render from scratch" requirement trivial. Put
+every token in one `theme.css`; if a component hard-codes a hex value, that's a
+bug.
 
 ---
 
