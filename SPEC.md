@@ -37,6 +37,7 @@ One file per task, rewritten in full by its agent at every transition:
   "branch": "task/supplier-dedupe-rule",
   "agentName": "supplier-dedupe-rule",
   "model": "opus-4-8",
+  "taskId": "<harness task id, for TaskOutput probes>",
   "startedAt": "2026-07-18T18:11:04Z",
   "updatedAt": "2026-07-18T18:39:51Z",
   "heartbeatAt": "2026-07-18T18:41:12Z",
@@ -71,6 +72,8 @@ workspace root**, e.g. `workflow/queue/supplier-dedupe-rule-match.md`.
 
 ### Field semantics
 
+- `taskId` is the harness task id the dispatcher uses for `TaskOutput`
+  probes — dispatcher-facing; Argus ignores it.
 - `model` is optional. **Any field may be missing on a malformed write** —
   consumers must parse defensively and never crash on bad JSON. Argus shows
   an unreadable STATUS.json as `⚠ unparsable` rather than dropping it.
@@ -121,12 +124,20 @@ e.g. ../assets/<taskid>-<slug>/shot-1.png
 - Front-matter keys are flat strings/booleans (`true`/`false`).
 - Options are `- [ ]` checkboxes; at most one is marked `*(recommended)*`.
 - `## Notes` is free text the author may add when answering.
+- **Queue files appear atomically**: the asking agent fills a copy at
+  `queue/.<name>.md.tmp`, then renames it to `queue/<name>.md` — the rename
+  makes the question appear whole. A watcher must never see a half-filled
+  template; `.tmp` names must not match consumers' `*.md` filters (they
+  don't — they end in `.tmp`).
 
 ## The answer contract
 
-The author (through Argus or by hand) ticks **exactly one** `- [ ]` →
-`- [x]` and optionally writes free text under `## Notes`, then saves. The
-asking agent polls the file for `\[x\]` (or the file's disappearance).
+The author (through Argus or by hand) ticks a `- [ ]` → `- [x]` and
+optionally writes free text under `## Notes`, then saves. Argus's radio
+group ticks exactly one; a hand edit may tick several — **more than one
+`[x]` means the author wants all of them, as joint constraints**. The
+asking agent polls the file for `\[[xX]\]` — case-insensitive — or the
+file's disappearance.
 
 Therefore any tool writing an answer MUST:
 
@@ -138,8 +149,9 @@ Therefore any tool writing an answer MUST:
 And MUST NOT move, rename, or delete a queue file. The **asking agent**
 archives the file to `<questionRoot>/resolved/` after consuming the answer.
 
-A file that already contains `[x]` is answered: render it read-only with the
-recorded choice highlighted.
+A file that already contains `[x]` is answered: render it read-only with
+**every** ticked option highlighted (one is the common case; several means
+joint constraints).
 
 ## What Argus renders (informative)
 
