@@ -1,0 +1,113 @@
+{
+  "name": "argus",
+  "displayName": "Argus",
+  "description": "Cockpit for a multi-agent Claude Code fleet. Agents write state files; Argus renders them and lets you answer agent questions with radio buttons. Files are the contract.",
+  "version": "0.1.0",
+  "publisher": "phillip-lavrador",
+  "license": "MIT",
+  "author": "Phillip Lavrador",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:workflow/queue",
+    "workspaceContains:.scratch/fleet/fleet.json"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "argus",
+          "title": "Argus",
+          "icon": "$(eye)"
+        }
+      ]
+    },
+    "views": {
+      "argus": [
+        {
+          "id": "argusFleet",
+          "name": "Fleet",
+          "icon": "$(eye)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "argusFleet",
+        "contents": "No fleet state found.\nArgus reads task state from `argus.stateRoot` (default `.scratch/fleet`) and questions from `argus.questionRoot` (default `workflow`). It appears here as soon as an agent writes either. See SPEC.md in the Argus repo for the file contract."
+      }
+    ],
+    "commands": [
+      {
+        "command": "argus.refresh",
+        "title": "Argus: Refresh Fleet View",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "argus.openTask",
+        "title": "Argus: Open Task Progress"
+      },
+      {
+        "command": "argus.openQuestion",
+        "title": "Argus: Answer Fleet Question"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "argus.refresh",
+          "when": "view == argusFleet",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "argus.openTask",
+          "when": "false"
+        },
+        {
+          "command": "argus.openQuestion",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Argus",
+      "properties": {
+        "argus.stateRoot": {
+          "type": "string",
+          "default": ".scratch/fleet",
+          "description": "Workspace-relative folder where fleet agents write machine state (tasks/*/STATUS.json, watchdog/sweep.json)."
+        },
+        "argus.questionRoot": {
+          "type": "string",
+          "default": "workflow",
+          "description": "Workspace-relative folder holding the human-facing question queue (queue/*.md, resolved/, assets/)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "compile": "npm run typecheck && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "tsc -p tsconfig.test.json && node --test \"out-test/test/*.test.js\""
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^18.19.0",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}
