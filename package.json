@@ -15,7 +15,8 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:workflow/queue",
-    "workspaceContains:.scratch/fleet/fleet.json"
+    "workspaceContains:.scratch/fleet",
+    "onStartupFinished"
   ],
   "contributes": {
     "viewsContainers": {
