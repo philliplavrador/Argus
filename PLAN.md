@@ -198,7 +198,71 @@ one thing that genuinely works is a good one.
 verifying, and writing the report. A session that codes until it runs out of
 window leaves everything half-wired.
 
-### 0.9 The morning report
+### 0.9 Checkpoints — survive a dropped connection or an exhausted quota
+
+Two things will end this run without warning: **the internet dropping** and
+**usage limits running out.** Both kill the session instantly, mid-thought, with
+no chance to tidy up. Assume it will happen and design the night so it costs
+minutes rather than hours.
+
+**The governing rule: never let more than ~20 minutes of work exist only inside
+your context.**
+
+**1. `.argus-build/STATE.md` is the resume point.** Rewrite it after every
+meaningful step — **atomically** (write `STATE.md.tmp`, then rename over
+`STATE.md`), so dying mid-write leaves the previous good version rather than a
+truncated one. It must be sufficient for a fresh session that has never seen this
+night to pick up without re-deriving anything:
+
+- Wall-clock start time and last-updated time — get them with `date` via Bash,
+  since you have no clock otherwise. A resuming session needs to know how much of
+  the 12-hour window is left.
+- Current phase, and specifically what is finished inside it.
+- **The exact next action**, concrete enough to execute without inference.
+- What is verified by observation versus written-but-unverified. Keep these
+  strictly separate; the distinction is the whole value of the file.
+- One line per spike result. These are expensive to redo.
+- Anything half-done that a resuming session must finish or revert before
+  continuing.
+
+**2. Commit constantly.** A commit per phase is far too coarse when a phase runs
+90 minutes. Commit whenever anything works, and WIP-commit before anything risky.
+On the `v2` branch a messy history costs nothing — the author can squash later.
+**Uncommitted work at the moment of death is the only work actually lost.**
+
+**3. Commit the build artifacts in the same commits** — `.argus-spikes/`,
+`decisions.md`, and `STATE.md`. A spike result that exists only in a dead
+session's context gets paid for twice.
+
+**4. Checkpoint before the risk, not after.** Record what you are about to do,
+then do it. A session that dies mid-operation leaves the next one guessing —
+especially for anything touching git or worktrees, where a half-finished
+operation is worse than none.
+
+**5. Detect exhaustion and stop cleanly.** Repeated 429s, auth failures, or
+throttling that doesn't clear mean the night is over. **Do not retry in a loop.**
+Step down the model ladder once (§0.5); if that also fails, finalize `STATE.md`,
+write the report with what actually landed, commit, and stop. *A clean stop at
+hour four with an honest report is fully recoverable. A wedged session that
+thrashed on 429s until morning is not.*
+
+**Resume protocol.** If the author finds a dead session in the morning — or
+overnight — they start a fresh one and type **"resume overnight."** On that
+phrase, in this order:
+
+1. Re-run the Kiosk read-only verification (§0.4) **first**, before anything
+   else. You do not know what the dead session was doing when it died.
+2. Read `STATE.md`, then `git log --oneline` on `v2`, then `decisions.md`.
+3. Verify the working tree actually matches what `STATE.md` claims, and
+   reconcile if it doesn't — trust the tree over the file.
+4. Continue from the recorded next action. **Do not restart from Phase 0 and do
+   not re-run spikes whose results are already recorded.** Ask nothing; the
+   original "overnight" authorization still stands.
+
+Note any resume in the morning report — how many times, and what was lost across
+each gap.
+
+### 0.10 The morning report
 
 Write `.argus-build/REPORT.md` and make it the final commit's subject.
 
