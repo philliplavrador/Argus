@@ -11,104 +11,217 @@ primary · Author: Phillip Lavrador
 
 ## 0. How this build runs — READ FIRST
 
-**This is an overnight unattended build.** The author will answer questions,
-say "begin," and then go to sleep. They return the next morning. From "begin"
-until morning there is **nobody to ask**. Structure your entire session around
-that fact.
+**This is a 12-hour overnight unattended build.** Structure your entire session
+around one fact: after the author says the go-word, **there is nobody to ask
+until morning.**
 
-### 0.1 Before "begin": ask everything, in one batch
+### 0.1 The trigger protocol
 
-Read this whole document first. Most decisions are already made in it — do not
-re-ask those. Then ask the author, in **one** batch, only what remains
-unanswered and would genuinely change the build. The list below is what is
-expected to remain; drop any you can answer from this document, and add any real
-fork you find while reading.
+1. The author opens a Claude Code session in this repo and types **"begin
+   building."**
+2. **You read this document in full and survey the repo.** Take as long as you
+   need — this is the cheap part of the night.
+3. You ask your **one and only** question batch (§0.3). This is the last
+   exchange.
+4. The author answers. You **restate the resolved decisions back in one short
+   block** so they can correct you.
+5. The author types **"overnight."** That is the go-word. They leave.
+6. You have **up to 12 hours.** Use as much or as little as the work needs — 6,
+   8, 12, all fine. Do not stretch work to fill the window and do not rush to
+   finish early. **Ship a coherent state, then stop.**
 
-1. **Test target.** Acceptance requires driving Argus against a real large repo.
-   Which repo, at which absolute path, and is it safe to create worktrees and
-   throwaway branches in it? *(If the answer is "none available," you must
-   synthesize a large fixture repo — say so and get agreement before "begin.")*
-2. **Budget ceiling** for the whole overnight run, in USD. Hard stop.
-3. **Branch strategy** — build straight on `main`, or on a `v2` branch merged in
-   the morning?
-4. **Build-agent model and effort** for your own subagents — this drives most of
-   the cost.
-5. **Auth durability** — will the author's Claude Code login still be valid
-   overnight, and does spawning agents from the SDK work right now? *Verify this
-   live before they sleep, not at 2am.*
-6. **Permission posture.** Unattended means a permission prompt at 2am stalls
-   until morning. Confirm what the author has configured and what you may run
-   without asking. **Do not propose or enable any permission bypass yourself** —
-   this is the author's decision to make and configure, and if they decline,
-   scope your work to what runs within the permissions you have.
+After "overnight," `AskUserQuestion` is **forbidden**. A blocked question wastes
+the entire night.
 
-Present the batch, let them answer, and **restate the resolved decisions back to
-them in one short block** before they say "begin." When they say begin, they
-leave. Do not ask anything after that point.
+### 0.2 Already decided — do NOT re-ask these
 
-### 0.2 After "begin": never block, always decide
+| Decision | Resolution |
+|---|---|
+| **Test repo** | `D:\Projects\Kosik's Kiosk` — **read-only, cloned.** See §0.4. |
+| **Billing model** | Claude **Max 20x subscription**, not API billing. Pace against *usage limits*, not dollars. See §0.5. |
+| **Model ladder** | Fable 5 → Opus 4.8 → Haiku 4.5. See §0.5. |
+| **What "done" means** | **A polished slice that works**, not broad coverage. See §0.8. |
+| **Branch strategy** | Build on a **`v2` branch**, not `main`. `main` keeps working v0.1 all night; the author merges in the morning after reading the report. Costs nothing, and a bad night can't damage anything. |
+| **Package at the end** | Build the `.vsix` and leave it in the repo root. **Do not auto-install it** — that's the author's call. |
 
-- **`AskUserQuestion` is forbidden after "begin."** A blocked question wastes the
-  entire night.
-- When you hit a genuine fork, **make the reversible choice**, write it to
-  `.argus-build/decisions.md` with the reasoning and what you'd need to revisit
-  it, and keep moving. A documented decision you can undo in the morning is worth
+### 0.3 What you may still ask
+
+Only these, and only if reading the repo hasn't already answered them:
+
+1. **Auth durability.** Will the Claude Code login hold overnight, and does
+   spawning an SDK agent work *right now*? **Verify this live while the author is
+   still awake** — a 30-second check that prevents losing the whole night.
+2. **Permission posture.** Unattended means a permission prompt at 2am stalls
+   until morning. Ask what is already configured and what you may run without
+   asking. **Do not propose, enable, or configure any permission bypass
+   yourself** — that is the author's decision to make. If they decline, scope the
+   night to what runs within the permissions you have and say so.
+3. Any genuine fork you found while reading that this document does not resolve.
+
+Keep the batch short. The author is going to bed.
+
+### 0.4 HARD RULE — the test repo is read-only
+
+The author's words: *"Do not make any changes to my actual codebase. I don't want
+to wake up the next morning and my whole codebase for Kiosk doesn't work."*
+
+**Treat `D:\Projects\Kosik's Kiosk` as read-only for the entire night. No
+exceptions.** As of writing it sits on branch `feat/restructure` with
+**uncommitted changes** to `.claude/settings.json` — there is real unsaved work
+in there. 443 tracked files, 128 commits.
+
+Mechanics, in order:
+
+1. **Clone once, at the start**, into your scratch area — *not* into this repo's
+   working tree, so a stray `git add -A` can never sweep it in:
+   ```
+   git clone --no-hardlinks "D:/Projects/Kosik's Kiosk" <scratch>/kiosk-fixture
+   ```
+   `--no-hardlinks` removes any shared-object doubt. Note the path contains a
+   space **and an apostrophe** — quote it correctly everywhere, and verify your
+   quoting on the very first command rather than discovering it at 3am.
+2. **The original path is never a cwd, never in `additionalDirectories`, never
+   passed to any spawned agent, and never written to.** Not by you, not by a
+   subagent, not by a worktree. Put it in a denylist if the SDK gives you one.
+3. **Fix the fixture, not the source.** If the clone is missing something (the
+   uncommitted `settings.json`, an ignored file), work around it in the clone or
+   note it in the report. Do not go back to the original to "just copy one file."
+4. **Verify before you sleep and again before the report.** `git -C "D:/Projects/
+   Kosik's Kiosk" status --porcelain` must show exactly the one pre-existing
+   modification to `.claude/settings.json` and nothing else, and it must still be
+   on `feat/restructure`. **Put that verification output verbatim in the morning
+   report.** If it ever differs, stop building, restore it, and make that the
+   headline of the report.
+
+Sizing caveat: 443 files is fine for testing *function* — worktrees, scope
+enforcement, the inbox. It is **not** big enough to exercise Argus's big-repo
+value prop (orientation cost, unpredictable collisions). Don't conclude from a
+clean run here that the product works at scale; note the limitation in the report.
+
+### 0.5 Models and usage pacing — subscription, not dollars
+
+The author is on a **Max 20x subscription**. `maxBudgetUsd` and dollar ceilings
+are the wrong instrument — the real constraint is **usage limits**, and hitting
+them hard-stops the fleet at 3am with nobody to notice.
+
+**Model ladder** (Fable 5 is the most capable *and* the most expensive per token
+— roughly 2× Opus 4.8 — so stepping down to Opus when usage runs hot is the
+correct direction, not a downgrade):
+
+| Tier | Model | Use for |
+|---|---|---|
+| Primary | `claude-fable-5` | Architecture, contracts, integration, verification — the work where being right matters |
+| Step-down | `claude-opus-4-8` | Everything, once usage is running hot. Still excellent; ~half the token cost |
+| Floor | `claude-haiku-4-5` | Mechanical work — boilerplate, test scaffolding, file moves — at any time |
+
+Rules: put mechanical subagent work on Haiku from the start rather than
+discovering you need to downshift at hour 8. Step the whole fleet down to Opus
+4.8 the moment throttling appears. **If you get hard-limited, do not spin and
+retry** — write the report with what landed and stop cleanly. A clean stop at
+hour 7 with an honest report beats a wedged session that burned the remaining
+five hours on 429s.
+
+Fable 5 specifics that matter here: thinking is always on, so **omit the
+`thinking` parameter entirely** (an explicit `disabled` is rejected); depth is
+controlled by `effort`. Single requests on hard tasks can legitimately run many
+minutes — that is normal, not a hang. Handle `stop_reason: "refusal"` before
+reading response content, and configure an Opus 4.8 fallback.
+
+### 0.6 After "overnight": never block, always decide
+
+- On a genuine fork, **make the reversible choice**, write it to
+  `.argus-build/decisions.md` with the reasoning and what would justify
+  revisiting, and keep moving. A documented, undoable decision is worth
   infinitely more than a stalled session.
-- **Time-box every phase.** If a phase runs past ~90 minutes without landing, cut
-  scope to the smallest working version, log what you cut, and move on. Do not
-  spend four hours on Windows worktree edge cases — log the failure, stub the
-  path, continue.
-- **Never leave `main` broken.** Every phase commit must typecheck and pass
-  tests. If a phase can't get there, commit it on a side branch and note it.
-- **Pre-authorized fallbacks** — these forks are decided in advance so you never
-  need to ask:
+- **Time-box every phase.** Past ~90 minutes without landing, cut to the smallest
+  working version, log what you cut, move on. Do not spend four hours on Windows
+  worktree edge cases — log it, stub the path, continue.
+- **Never leave the `v2` branch broken.** Every phase commit typechecks and
+  passes tests. If a phase can't get there, park it on a side branch and note it.
+- **Pre-authorized fallbacks** — decided in advance so no unknown can stall you:
   - *Spike B fails (blocking `canUseTool` doesn't hold a session):* fall back to
-    abort + `resume` with the answer injected. Build the inbox against an
-    interface that hides which mechanism is used. Flag it prominently in the
-    morning report — it changes latency and cost, not feasibility.
+    abort + `resume` with the answer injected. Build the inbox behind an
+    interface that hides which mechanism is used. Flag it loudly — it changes
+    latency and cost, not feasibility.
   - *Spike C says per-worktree `node_modules` is expensive:* worktrees still
-    ship; note that v2.2 live preview is at risk and why.
-  - *Spike A shows a low concurrency ceiling:* set the cap low and make it a
-    setting. Do not redesign.
-  - *SDK API surface differs from §4:* trust the installed `.d.ts` over this
-    document, and record the deltas.
-  - *A UI tab won't finish:* ship Fleet and Inbox complete over Timeline and
-    Settings partial. See the priority order below.
+    ship; note that v2.2 live preview is at risk, and why.
+  - *Spike A shows a low concurrency ceiling:* set the cap low, make it a
+    setting, do not redesign.
+  - *SDK surface differs from §4:* trust the installed `.d.ts` over this
+    document; record every delta.
+  - *A UI tab won't finish:* Fleet and Inbox complete beats four tabs partial.
 
-### 0.3 Build a vertical slice first, then widen
+### 0.7 Working discipline for a long autonomous run
 
-**An 8-hour unattended run will not produce all of v2.0. Plan for that, and
-control what the 60% looks like.** Six half-finished modules that don't talk to
-each other is a bad morning. One thing that genuinely works end-to-end is a good
-one. Strict priority:
+These are calibrated for exactly this scenario — a capable model working for
+hours with nobody watching. Apply them to yourself and put the relevant ones into
+the system prompts of long-running subagents.
 
-1. **The slice:** one task can be created, gets a worktree, runs a real agent,
-   streams progress to the Fleet tab, asks a question, shows a ★, and resumes
-   when answered from the Inbox. *This alone is a successful night.*
-2. Multiple concurrent tasks, scope enforcement + escalation.
-3. Settings tab, budget/spend, persistence and replay.
-4. Timeline tab, merge queue, `collisionReport`.
-5. Polish, docs, `.vsix` packaging.
+- **Don't stop early or ask for permission you don't need.** Before ending a
+  turn, check the last paragraph: if it is a plan, a question, or a promise about
+  work you haven't done ("I'll now run X", "let me know if…"), **do that work now
+  with tool calls instead.** End a turn only when the task is complete or you are
+  blocked on something only the author can provide — and after "overnight," that
+  second case means log it and move to the next item, not stop.
+- **Ground every progress claim in a tool result.** Before writing that something
+  works, point to the actual output that shows it. If it isn't verified, say so
+  explicitly. Fabricated status is the single most expensive failure mode here,
+  because the author acts on the report before re-checking the code.
+- **Delegate asynchronously.** Spawn subagents for independent work and keep
+  going rather than blocking on the slowest one. Intervene when one goes off
+  track or is missing context.
+- **Keep `decisions.md` as you go**, not from memory at 6am. One decision per
+  entry, with the why.
+- **Don't ration context.** Do not stop, summarize, or suggest a fresh session on
+  account of context limits — keep working.
 
-Do not start item N+1 until item N actually runs. Resist building all the pure
-modules first because they're pleasant to build — they are worthless until
-something calls them.
+### 0.8 Priority: a polished slice, not broad coverage
 
-### 0.4 The morning report
+The author chose **"polished slice that works"** over maximum coverage. Honor
+that literally — it changes what you do at hour 9.
 
-Last thing you do: write `.argus-build/REPORT.md` and make it the final commit's
-subject. The author reads this before anything else. It must contain:
+1. **The slice.** One task can be created, gets a worktree, runs a real agent,
+   streams live progress to the Fleet tab, asks a question, shows a ★, and
+   resumes when answered from the Inbox. Styled per §10.1. *This alone is a
+   successful night.*
+2. Multiple concurrent tasks; ScopeGuard enforcement and escalation.
+3. Settings tab; persistence and replay across a restart.
+4. Timeline tab; merge queue; `collisionReport`.
+5. `.vsix` packaging and docs.
 
-- **What works** — with the exact commands to see each thing working.
+**Do not start item N+1 until item N actually runs and looks finished.** Resist
+building all the pure modules first because they're pleasant to build — they are
+worthless until something calls them. Six disconnected modules is a bad morning;
+one thing that genuinely works is a good one.
+
+**Stop building at roughly hour 10** and spend the remainder integrating,
+verifying, and writing the report. A session that codes until it runs out of
+window leaves everything half-wired.
+
+### 0.9 The morning report
+
+Write `.argus-build/REPORT.md` and make it the final commit's subject.
+
+Remember what this document is: the author has been asleep. They saw none of the
+work. **This is their first look at all of it**, so write it as a re-grounding,
+not a continuation of your working thread. Drop the shorthand you built up
+overnight. Complete sentences, terms spelled out, no arrow chains, no invented
+labels, no packing five identifiers into one parenthetical. Lead with the
+outcome, then the detail.
+
+It must contain:
+
+- **What works** — with the exact command to see each thing working.
 - **What doesn't**, and how far it got.
+- **The Kiosk verification** from §0.4, pasted verbatim.
 - **Every decision** from `decisions.md`, with the ones worth revisiting flagged.
-- **What the spikes found**, especially anything that contradicts this plan.
-- **Total spend** versus the ceiling.
+- **What the spikes found**, especially anything contradicting this plan.
+- **Usage/throttling** — what you hit, when you stepped down the model ladder.
 - **The single next thing** to do.
 
-Be exact about what you could not verify. An honest "the merge queue is written
-but never ran against a real conflict" is useful. A confident "merge queue works"
-that turns out to be false costs more than the whole night was worth.
+Be exact about what you could not verify. "The merge queue is written but never
+ran against a real conflict" is useful. A confident "merge queue works" that
+turns out to be false costs more than the whole night was worth.
 
 ---
 
