@@ -1,8 +1,9 @@
 # Argus v2 — overnight build report
 
 Good morning. The build is done, and it went unusually well: **v2.0 shipped
-complete, verified end to end with real agents, and packaged**, in roughly two
-hours of wall-clock instead of twelve. Nothing was rushed to get there — the
+complete, verified end to end with real agents, adversarially reviewed, and
+packaged**, in about ninety minutes of wall-clock (17:13–18:45) instead of
+twelve hours. Nothing was rushed to get there — the
 work simply went cleanly, and per the plan's own rule I stopped when the state
 was coherent rather than inventing work to fill the window. Everything below
 is on the `v2` branch, pushed. `main` was never touched. Your Kiosk repo was
@@ -220,4 +221,19 @@ the v2.3 scheduler ever gets built.)
 
 ## Kiosk read-only verification (verbatim, §0.4)
 
-<!-- KIOSK_VERIFICATION -->
+Run at 2026-07-18 18:40:12 -07:00, after all work was complete:
+
+```
+=== git -C "D:/Projects/Kosik's Kiosk" status --porcelain
+ M .claude/settings.json
+=== git -C "D:/Projects/Kosik's Kiosk" branch --show-current
+feat/restructure
+=== git -C "D:/Projects/Kosik's Kiosk" log --oneline -1
+da87709 feat(fleet): questions become files the author answers in place
+```
+
+Exactly the one pre-existing modification to `.claude/settings.json`, still
+on `feat/restructure`, same HEAD as before the run. The repo was cloned once
+(`--no-hardlinks`) into the session scratchpad at the very start; every test
+ran against that clone or fresh clones of it; the original path never
+appeared in any subsequent command.
