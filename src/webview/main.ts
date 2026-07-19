@@ -75,10 +75,14 @@ window.addEventListener('message', (ev: MessageEvent) => {
     render();
   } else if (msg.kind === 'events') {
     if (state !== null) {
-      for (const e of msg.events) {
+      // Batches queued while a snapshot was in flight can overlap it — a
+      // re-applied usage event would double-count cost (review C9). The seq
+      // guard makes application idempotent.
+      const fresh = msg.events.filter((e) => e.seq > (state as FleetState).seq);
+      for (const e of fresh) {
         state = reduce(state, e);
       }
-      bufferEvents(msg.events);
+      bufferEvents(fresh);
       render();
     }
   } else if (msg.kind === 'history') {

@@ -292,7 +292,7 @@ function scopeBody(item: ScopeEscalationItem, state: FleetState, ctx: TabContext
     el(
       'p',
       { class: 'inbox-line' },
-      `${item.taskId} wants to edit `,
+      `${item.taskId} wants to ${item.tool === 'Bash' ? 'run' : 'edit'} `,
       el('code', { class: 'mono' }, item.path),
     ),
   );
@@ -309,15 +309,21 @@ function scopeBody(item: ScopeEscalationItem, state: FleetState, ctx: TabContext
   const allow = actionBtn('Allow once', () =>
     answer(ctx, state, item, { rkind: 'scope-escalation', action: 'allow-once' }),
   );
-  const expand = actionBtn('Allow & expand scope', () => {
-    toggleReveal(ctx, item.id, 'expand');
-    rerender(state, ctx);
-  });
   const deny = actionBtn('Deny', () => {
     toggleReveal(ctx, item.id, 'deny');
     rerender(state, ctx);
   });
-  nodes.push(el('div', { class: 'inbox-actions' }, allow, expand, deny));
+  // A Bash escalation carries a command, not a path — there is no glob to
+  // expand, so the expand action would be meaningless (review C7).
+  if (item.tool === 'Bash') {
+    nodes.push(el('div', { class: 'inbox-actions' }, allow, deny));
+  } else {
+    const expand = actionBtn('Allow & expand scope', () => {
+      toggleReveal(ctx, item.id, 'expand');
+      rerender(state, ctx);
+    });
+    nodes.push(el('div', { class: 'inbox-actions' }, allow, expand, deny));
+  }
 
   const reveal = ctx.viewState[`reveal:${item.id}`];
   if (reveal === 'expand') {
@@ -499,6 +505,12 @@ function answer(
   item: InboxItem,
   resolution: InboxResolution,
 ): void {
+  // A second click before the inbox-resolved event round-trips would throw
+  // "not pending" server-side (review C13) — latch the send per item.
+  if (ctx.viewState[`sent:${item.id}`] === true) {
+    return;
+  }
+  ctx.viewState[`sent:${item.id}`] = true;
   ctx.send({ kind: 'answer', itemId: item.id, resolution });
 
   const pending = pendingInbox(state);

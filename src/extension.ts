@@ -25,6 +25,9 @@ import { ArgusPanel, PanelHost } from './host/panel';
 import { GitWorktreeManager } from './host/worktrees';
 
 let orchestrator: Orchestrator | undefined;
+/** In-flight boot guard: two quick commands must share one boot, not race two
+ * orchestrators onto the same events.jsonl (review C16). */
+let orchestratorBoot: Promise<Orchestrator | undefined> | undefined;
 let eventLog: JsonlEventLog | undefined;
 let statusBar: vscode.StatusBarItem | undefined;
 
@@ -94,10 +97,28 @@ function workspaceRoot(): string | undefined {
   return folder.uri.fsPath;
 }
 
-async function ensureOrchestrator(context: vscode.ExtensionContext): Promise<Orchestrator | undefined> {
+function ensureOrchestrator(context: vscode.ExtensionContext): Promise<Orchestrator | undefined> {
   if (orchestrator !== undefined) {
-    return orchestrator;
+    return Promise.resolve(orchestrator);
   }
+  if (orchestratorBoot === undefined) {
+    orchestratorBoot = bootOrchestrator(context).then(
+      (orch) => {
+        if (orch === undefined) {
+          orchestratorBoot = undefined; // not a git repo yet — retryable
+        }
+        return orch;
+      },
+      (err) => {
+        orchestratorBoot = undefined; // a failed boot may be retried
+        throw err;
+      },
+    );
+  }
+  return orchestratorBoot;
+}
+
+async function bootOrchestrator(context: vscode.ExtensionContext): Promise<Orchestrator | undefined> {
   const repoRoot = workspaceRoot();
   if (repoRoot === undefined) {
     return undefined;

@@ -221,6 +221,9 @@ export function reduce(state: FleetState, event: ArgusEvent): FleetState {
     case 'inbox-resolved':
       return applyInboxResolved(base, event.itemId, event.resolution, ts);
 
+    case 'inbox-voided':
+      return applyInboxVoided(base, event.itemId, ts);
+
     default:
       // Unknown `type` (a forward-compatible event read from disk): no-op.
       return base;
@@ -421,9 +424,22 @@ function applyMergeFinished(base: FleetState, taskId: TaskId, ts: string): Fleet
   }
   return {
     ...base,
-    tasks: { ...base.tasks, [taskId]: { ...t, phase: 'DONE', endedAt: ts } },
+    // The worktree and branch are torn down as part of a finished merge —
+    // clearing the path keeps the UI from offering actions on a deleted dir.
+    tasks: { ...base.tasks, [taskId]: { ...t, phase: 'DONE', endedAt: ts, worktreePath: null } },
     merging,
   };
+}
+
+/** Expired, not answered: resolvedAt set, resolution stays null. */
+function applyInboxVoided(base: FleetState, itemId: string, ts: string): FleetState {
+  const idx = base.inbox.findIndex((i) => i.id === itemId);
+  if (idx < 0 || base.inbox[idx].resolvedAt !== null) {
+    return base;
+  }
+  const inbox = [...base.inbox];
+  inbox[idx] = { ...inbox[idx], resolvedAt: ts } as InboxItem;
+  return { ...base, inbox };
 }
 
 function applyTerminal(

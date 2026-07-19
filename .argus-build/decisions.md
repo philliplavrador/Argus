@@ -53,6 +53,9 @@ pump() selected QUEUED tasks, but ineligibility only landed when task-started fo
 A gate failure sent back to the agent starts a new session whose prompt carries the failure output; same for merge-conflict fixers. The SDK supports resume (session id is recorded), which would preserve full context at lower token cost — deferred, not rejected: fresh sessions are simpler to reason about at 2am and demonstrably worked in the smoke.
 Revisit in: v2.1, as "resume with context" polish.
 
+## D15 — The adversarial review fleet ran after all green verification, and was right to
+Four breaker agents + two skeptics per claim confirmed 19 real defects (3 critical) that unit tests, four live smokes, a Chromium UI harness, and a real-VS-Code integration run had all missed — including a fail-open scope escape and a Stop that couldn't stop a merge. All fixed same-night with regression tests (suite 243 → 257). Lesson recorded for future builds: layered verification finds different bug classes at every layer, and the adversarial layer is not optional.
+
 ## D10 — Argus installs deps in fresh worktrees by default (`installDepsOnProvision: true`)
 Spike C measured per-worktree `npm install` on a warm cache at 6.6s/180MB — cheaper than robocopy and fully isolated (junctions confirmed unsafe: write-back through the junction lands in the shared source). Without install, verify gates die on missing node_modules. Config-off for non-node repos or speed.
 Revisit if: a target repo's cold-cache install is minutes — then pre-warm or disable.

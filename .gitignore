@@ -5,3 +5,4 @@ out-test/
 
 .playwright-mcp/
 out-test*/
+.vscode-test/

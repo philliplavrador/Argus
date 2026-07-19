@@ -10,7 +10,7 @@
  * testable.
  */
 
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
@@ -132,10 +132,16 @@ export class Orchestrator {
     });
     await this.append({ type: 'orchestrator-started', version, config: this.deps.config });
     this.baseBranch = await this.detectBaseBranch();
-    const live = Object.values(this.fleet.tasks)
-      .filter((t) => isLivePhase(t.phase) || t.phase === 'MERGING')
+    // QUEUED tasks survive a restart — start them (review C3: without this
+    // pump, they'd stall forever with free capacity).
+    void this.pump();
+    // "Stale" means no NON-TERMINAL task owns the worktree. READY tasks hold
+    // completed-but-unmerged work — treating them as stale would force-remove
+    // it (review C15).
+    const owned = Object.values(this.fleet.tasks)
+      .filter((t) => !TERMINAL_SET.has(t.phase))
       .map((t) => t.spec.id);
-    return this.deps.worktrees.findStale(live);
+    return this.deps.worktrees.findStale(owned);
   }
 
   // -------------------------------------------------------------------------
@@ -182,10 +188,20 @@ export class Orchestrator {
       return;
     }
     const wt = await this.deps.worktrees.provision(taskId);
+    // The task may have been stopped while provisioning ran (review C2) —
+    // don't spawn an agent for a cancelled task; clean the fresh worktree up.
+    if (isTerminal(this.fleet, taskId)) {
+      this.scheduling.delete(taskId);
+      await this.deps.worktrees.remove(taskId, { force: true, deleteBranch: true }).catch(() => undefined);
+      return;
+    }
     await this.append({ type: 'task-started', taskId, worktreePath: wt.path, branch: wt.branch });
     // The fold above made this task live; release the scheduling reservation
     // so it stops double-counting against capacity.
     this.scheduling.delete(taskId);
+    if (isTerminal(this.fleet, taskId)) {
+      return; // stopped in the append window — never spawn
+    }
 
     if (this.fleet.config.installDepsOnProvision && this.deps.installCommand !== null) {
       await this.append({
@@ -343,6 +359,8 @@ export class Orchestrator {
       if (held.taskId === taskId) {
         held.reject(new Error('task stopped'));
         this.held.delete(itemId);
+        // Expire the ghost card too — a dead task must not keep a ★ (C5/C10).
+        await this.append({ type: 'inbox-voided', itemId });
       }
     }
     const handle = this.handles.get(taskId);
@@ -467,9 +485,17 @@ export class Orchestrator {
     await this.append({ type: 'merge-started', taskId });
     const git = this.deps.execGit ?? defaultGit;
     const wt = t.worktreePath;
+    /** Stop clicked mid-merge must actually stop the merge — before every
+     * irreversible step, re-check that the task is still MERGING (review C1:
+     * without this, a cancel raced the ff-merge and code landed anyway). */
+    const abandoned = (): boolean => this.fleet.tasks[taskId]?.phase !== 'MERGING';
 
     // Rebase the task branch onto the (possibly moved) base branch.
     const rebase = await git(['rebase', this.baseBranch], wt);
+    if (abandoned()) {
+      await git(['rebase', '--abort'], wt); // harmless if the rebase completed
+      return;
+    }
     if (rebase.exitCode !== 0) {
       const conflicts = await git(['diff', '--name-only', '--diff-filter=U'], wt);
       const files = conflicts.stdout.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
@@ -505,6 +531,9 @@ export class Orchestrator {
           : [];
     for (const gate of gates) {
       const r = await this.deps.gates.run(wt, gate);
+      if (abandoned()) {
+        return;
+      }
       if (r.exitCode !== 0) {
         const result: GateResult = { name: gate.name, command: gate.command, exitCode: r.exitCode, outputTail: r.outputTail, durationMs: r.durationMs, finishedAt: new Date().toISOString() };
         await this.append({ type: 'gate-finished', taskId, result });
@@ -522,6 +551,9 @@ export class Orchestrator {
     }
 
     // Fast-forward the base branch in the primary checkout.
+    if (abandoned()) {
+      return;
+    }
     const merge = await git(['merge', '--ff-only', t.branch], this.deps.repoRoot);
     if (merge.exitCode !== 0) {
       const resolution = await this.raiseAndWait(taskId, {
@@ -593,6 +625,11 @@ export class Orchestrator {
     const file = path.join(this.deps.argusDir, 'config.json');
     await fs.mkdir(this.deps.argusDir, { recursive: true });
     await fs.writeFile(file, JSON.stringify(config, null, 2) + '\n', 'utf8');
+    // A raised (or removed) fleet budget un-trips the breaker; checkBudgets
+    // re-trips immediately if spend still exceeds the new cap (C4/C11).
+    if (this.budgetTripped && (config.fleetBudgetUsd === null || this.fleet.fleetCostUsd <= config.fleetBudgetUsd)) {
+      this.budgetTripped = false;
+    }
     void this.pump();
   }
 
@@ -614,10 +651,12 @@ export class Orchestrator {
   }
 
   async cleanupStaleWorktrees(): Promise<number> {
-    const live = Object.values(this.fleet.tasks)
-      .filter((t) => isLivePhase(t.phase) || t.phase === 'MERGING')
+    // Non-terminal tasks own their worktrees — READY especially (unmerged
+    // completed work; force-removing it would destroy it — review C15).
+    const owned = Object.values(this.fleet.tasks)
+      .filter((t) => !TERMINAL_SET.has(t.phase))
       .map((t) => t.spec.id);
-    const stale = await this.deps.worktrees.findStale(live);
+    const stale = await this.deps.worktrees.findStale(owned);
     let removed = 0;
     for (const wt of stale) {
       try {
@@ -656,15 +695,20 @@ export class Orchestrator {
   }
 }
 
+const TERMINAL_SET = new Set(['DONE', 'FAILED', 'CANCELLED']);
+
 function isTerminal(s: FleetState, taskId: TaskId): boolean {
   const p = s.tasks[taskId]?.phase;
-  return p === 'DONE' || p === 'FAILED' || p === 'CANCELLED';
+  return p !== undefined && TERMINAL_SET.has(p);
 }
 
+/** No shell: cmd.exe metacharacters in branch names or repo paths must never
+ * split or inject the command (review C17). */
 function defaultGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
-    exec(
-      `git ${args.map((a) => (/[\s"']/.test(a) ? JSON.stringify(a) : a)).join(' ')}`,
+    execFile(
+      'git',
+      args,
       { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
         resolve({ stdout, stderr, exitCode: err === null ? 0 : (err.code as number | undefined) ?? 1 });

@@ -284,6 +284,220 @@ test('stopTask while parked rejects the held decision and cancels cleanly', asyn
   assert.equal(orch.state.tasks['a'].phase, 'CANCELLED');
 });
 
+test('crossing the fleet budget stops every live task with the budget reason', async () => {
+  const log = new MemoryEventLog();
+  const worktrees = new FakeWorktrees();
+  const agents = makeFakeAgents();
+  const orch = new Orchestrator({
+    repoRoot: '/repo',
+    argusDir: '/repo/.argus',
+    eventLog: log,
+    worktrees: worktrees as never,
+    startAgent: agents.startAgent,
+    gates: noGates,
+    config: {
+      ...DEFAULT_CONFIG,
+      maxConcurrentAgents: 2,
+      installDepsOnProvision: false,
+      perTaskBudgetUsd: null,
+      fleetBudgetUsd: 1,
+    },
+    installCommand: null,
+    execGit: fakeGit,
+  });
+  await orch.start('test');
+  await orch.createTask(spec('a'));
+  await orch.createTask(spec('b'));
+  await tick();
+
+  // The runner reports spend past the fleet cap.
+  agents.started[0].callbacks.emit({
+    type: 'usage',
+    taskId: 'a',
+    costUsdDelta: 1.5,
+    tokensDelta: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  });
+  await tick();
+
+  assert.equal(orch.state.tasks['a'].phase, 'CANCELLED');
+  assert.equal(orch.state.tasks['b'].phase, 'CANCELLED');
+  assert.match(orch.state.tasks['a'].failureReason ?? '', /budget exceeded/);
+  assert.ok(orch.state.fleetCostUsd > 1);
+});
+
+test('C1: stopping a task mid-merge prevents the fast-forward from landing', async () => {
+  const log = new MemoryEventLog();
+  const worktrees = new FakeWorktrees();
+  const agents = makeFakeAgents();
+  const gitCalls: string[][] = [];
+  let releaseGate: () => void = () => undefined;
+  const slowGates = {
+    run: () =>
+      new Promise<{ exitCode: number; outputTail: string; durationMs: number }>((resolve) => {
+        releaseGate = () => resolve({ exitCode: 0, outputTail: '', durationMs: 1 });
+      }),
+  };
+  const orch = new Orchestrator({
+    repoRoot: '/repo',
+    argusDir: '/repo/.argus',
+    eventLog: log,
+    worktrees: worktrees as never,
+    startAgent: agents.startAgent,
+    gates: slowGates,
+    config: { ...DEFAULT_CONFIG, maxConcurrentAgents: 1, installDepsOnProvision: false, autoMerge: true, verifyCommand: null },
+    installCommand: null,
+    execGit: (args: string[]) => {
+      gitCalls.push(args);
+      return Promise.resolve({ stdout: 'main\n', stderr: '', exitCode: 0 });
+    },
+  });
+  await orch.start('test');
+  await orch.createTask(spec('a', { gates: [{ name: 'g', command: 'x' }] }));
+  await tick();
+  assert.equal(orch.state.tasks['a'].phase, 'RUNNING');
+  agents.finish('a', { result: 'success', detail: null });
+  await tick();
+  // verifyTask is parked on the slow gate.
+  assert.equal(orch.state.tasks['a'].phase, 'VERIFYING');
+  releaseGate();
+  await tick();
+  // READY → autoMerge → rebase ok → parked on the post-rebase gate.
+  assert.equal(orch.state.tasks['a'].phase, 'MERGING');
+  // The merge is now parked inside its post-rebase gate. Stop the task.
+  await orch.stopTask('a', 'operator stop');
+  await tick();
+  releaseGate(); // let the parked merge continue — it must notice and bail
+  await tick();
+  assert.equal(orch.state.tasks['a'].phase, 'CANCELLED');
+  assert.ok(
+    !gitCalls.some((c) => c[0] === 'merge'),
+    `no ff-merge may run after a cancel (git calls: ${gitCalls.map((c) => c.join(' ')).join('; ')})`,
+  );
+});
+
+test('C2: stopTask during provisioning never spawns an agent and cleans the worktree', async () => {
+  const log = new MemoryEventLog();
+  const agents = makeFakeAgents();
+  let releaseProvision: () => void = () => undefined;
+  const removed: string[] = [];
+  const slowWorktrees = {
+    provision: (taskId: string) =>
+      new Promise<WorktreeInfo>((resolve) => {
+        releaseProvision = () => resolve({ taskId, path: `/wt/${taskId}`, branch: `argus/${taskId}` });
+      }),
+    remove: (taskId: string) => {
+      removed.push(taskId);
+      return Promise.resolve();
+    },
+    list: () => Promise.resolve([]),
+    findStale: () => Promise.resolve([]),
+  };
+  const orch = new Orchestrator({
+    repoRoot: '/repo',
+    argusDir: '/repo/.argus',
+    eventLog: log,
+    worktrees: slowWorktrees as never,
+    startAgent: agents.startAgent,
+    gates: noGates,
+    config: { ...DEFAULT_CONFIG, maxConcurrentAgents: 1, installDepsOnProvision: false },
+    installCommand: null,
+    execGit: fakeGit,
+  });
+  await orch.start('test');
+  await orch.createTask(spec('a'));
+  await tick();
+  await orch.stopTask('a', 'changed my mind'); // still provisioning: no handle
+  assert.equal(orch.state.tasks['a'].phase, 'CANCELLED');
+  releaseProvision();
+  await tick();
+  assert.equal(agents.started.length, 0, 'no agent may spawn for a cancelled task');
+  assert.deepEqual(removed, ['a'], 'the fresh worktree is cleaned up');
+});
+
+test('C3: start() schedules QUEUED tasks that survived a restart', async () => {
+  const log = new MemoryEventLog();
+  await log.append({ type: 'task-created', spec: spec('leftover') });
+  await log.append({ type: 'task-queued', taskId: 'leftover' });
+  const worktrees = new FakeWorktrees();
+  const agents = makeFakeAgents();
+  const orch = new Orchestrator({
+    repoRoot: '/repo',
+    argusDir: '/repo/.argus',
+    eventLog: log,
+    worktrees: worktrees as never,
+    startAgent: agents.startAgent,
+    gates: noGates,
+    config: { ...DEFAULT_CONFIG, maxConcurrentAgents: 2, installDepsOnProvision: false },
+    installCommand: null,
+    execGit: fakeGit,
+  });
+  await orch.start('restarted');
+  await tick();
+  assert.equal(orch.state.tasks['leftover'].phase, 'RUNNING', 'replayed QUEUED task starts without user action');
+  agents.finish('leftover', { result: 'success', detail: null });
+  await tick();
+});
+
+test('C4: raising the fleet budget after a trip un-wedges scheduling', async () => {
+  const log = new MemoryEventLog();
+  const worktrees = new FakeWorktrees();
+  const agents = makeFakeAgents();
+  const orch = new Orchestrator({
+    repoRoot: '/repo',
+    argusDir: '/repo/.argus',
+    eventLog: log,
+    worktrees: worktrees as never,
+    startAgent: agents.startAgent,
+    gates: noGates,
+    config: { ...DEFAULT_CONFIG, maxConcurrentAgents: 1, installDepsOnProvision: false, perTaskBudgetUsd: null, fleetBudgetUsd: 1 },
+    installCommand: null,
+    execGit: fakeGit,
+  });
+  await orch.start('test');
+  await orch.createTask(spec('a'));
+  await tick();
+  agents.started[0].callbacks.emit({ type: 'usage', taskId: 'a', costUsdDelta: 2, tokensDelta: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } });
+  await tick();
+  assert.equal(orch.state.tasks['a'].phase, 'CANCELLED'); // tripped
+
+  await orch.setConfig({ ...DEFAULT_CONFIG, maxConcurrentAgents: 1, installDepsOnProvision: false, perTaskBudgetUsd: null, fleetBudgetUsd: 100 });
+  await orch.createTask(spec('b'));
+  await tick();
+  assert.equal(orch.state.tasks['b'].phase, 'RUNNING', 'new task runs after the cap is raised');
+  agents.finish('b', { result: 'success', detail: null });
+  await tick();
+});
+
+test('C5/C10: stopping a BLOCKED task voids its pending inbox item', async () => {
+  const { orch, agents } = makeOrchestrator(1);
+  await orch.start('test');
+  await orch.createTask(spec('a'));
+  await tick();
+  const decide = agents.started[0].callbacks.decide({ kind: 'question', header: null, question: 'q?', options: [], multiSelect: false });
+  decide.catch(() => undefined);
+  await tick();
+  assert.equal(orch.state.inbox.filter((i) => i.resolvedAt === null).length, 1);
+  await orch.stopTask('a', 'stop');
+  await tick();
+  const item = orch.state.inbox[0];
+  assert.notEqual(item.resolvedAt, null, 'the ghost card is expired');
+  assert.equal(item.resolution, null, 'expired, not answered');
+});
+
+test('C15: READY tasks own their worktrees — never offered as stale', async () => {
+  const { orch, agents, worktrees } = makeOrchestrator(1);
+  await orch.start('test');
+  await orch.createTask(spec('a'));
+  await tick();
+  agents.finish('a', { result: 'success', detail: null });
+  await tick();
+  assert.equal(orch.state.tasks['a'].phase, 'READY');
+  const before = (await worktrees.list()).length;
+  const removedCount = await orch.cleanupStaleWorktrees();
+  assert.equal(removedCount, 0, 'READY worktree must not be cleaned');
+  assert.equal((await worktrees.list()).length, before);
+});
+
 test('restart replay marks previously-live tasks failed and offers their worktrees as stale', async () => {
   const { orch, log, agents } = makeOrchestrator(2);
   await orch.start('test');

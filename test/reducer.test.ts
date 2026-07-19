@@ -226,7 +226,9 @@ test('full lifecycle DRAFT -> DONE as one fold', () => {
   );
   const t = s.tasks['a'];
   assert.equal(t.phase, 'DONE');
-  assert.equal(t.worktreePath, '/wt/a');
+  // merge-finished tears the worktree down, so the path clears with it (C12);
+  // the branch name stays as display history.
+  assert.equal(t.worktreePath, null);
   assert.equal(t.branch, 'argus/a');
   assert.equal(t.sessionId, 'sess-1');
   assert.notEqual(t.startedAt, null);

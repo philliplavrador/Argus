@@ -85,7 +85,56 @@ use a fresh clone of anything; never the Kiosk original):
    reached the agent, and it corrected itself — exactly the accident class
    Argus exists to stop, occurring unprompted on night one.
 
-<!-- ADVERSARIAL_RESULTS -->
+## The adversarial review — 19 more confirmed defects, all fixed the same night
+
+After everything above was green, I ran the plan's §12 discipline at full
+strength: four fresh-eyes reviewer agents (who had written none of the code)
+were told to break it, one subsystem each; every claim was then attacked by
+two independent skeptics, and only claims both upheld — most of them
+**reproduced by execution**, not just argued — counted. Of 24 raw findings,
+19 survived, 3 were contested, 2 were refuted. All 19 were fixed before this
+report, with new regression tests where behavior changed (the suite grew from
+243 to 257, all green; both live smokes were re-run afterwards and passed).
+
+The ones you should know about:
+
+- **Critical — Stop couldn't stop a merge.** Cancelling a task mid-merge
+  marked it CANCELLED while the in-flight fast-forward still landed its code
+  on your branch. The merge now re-checks the task's phase before every
+  irreversible step.
+- **Critical — ScopeGuard failed *open* on `../` paths.** A relative write
+  path escaping the worktree was normalized in isolation, clamping the dots
+  away and re-rooting it *inside* scope — a silently allowed escape. Paths now
+  join the worktree first and must still land inside it (with tests for the
+  escape family).
+- **Critical — reopening the panel could double-count.** Event batches queued
+  while a snapshot was in flight were re-applied over it, inflating costs and
+  duplicating tails. The webview fold now has a sequence guard.
+- **Critical — stale-worktree cleanup could destroy finished work.** READY
+  tasks (completed, awaiting merge) were not counted as owners, so cleanup
+  would force-remove their worktrees. Ownership is now "any non-terminal
+  task".
+- **Majors, all fixed:** stopping during provisioning still spawned the agent;
+  queued tasks stalled forever after a restart (nothing pumped the scheduler);
+  a tripped fleet budget latched permanently even after you raised the cap;
+  stopping a blocked task left a ghost ★ card; session-cumulative cost was
+  added per-turn (steered tasks double-counted spend); risky-Bash escalations
+  polluted the write instrumentation with command strings; branch names with
+  shell metacharacters could split the git command (now `execFile`, no
+  shell); a gate exceeding its output buffer was mislabeled a timeout; two
+  fast commands could boot two orchestrators onto one event log; a gate
+  timeout killed only `cmd.exe` and orphaned the npm/node tree holding
+  worktree handles (now `taskkill /T`).
+- **Minors:** double-clicking an inbox action raced the round-trip; QUEUED
+  tasks couldn't be cancelled individually; merged tasks offered buttons onto
+  a deleted worktree.
+- **Accepted as designed, now documented:** one unanswered merge-conflict
+  item holds the (deliberately serialized) merge queue; the waiting is
+  visible in the inbox rather than hidden.
+
+The full finding list with both skeptics' reasoning per item is in the
+workflow journal; the code changes are one commit, so the diff reads as a
+catalogue.
 
 ## What the spikes found (full reports in `.argus-spikes/`)
 

@@ -470,11 +470,16 @@ export const fleetTab: Tab = {
           }),
         );
       }
-      if (live) actions.append(btn('Stop', () => ctx.send({ kind: 'stop-task', taskId: t.spec.id }), 'danger'));
+      // QUEUED tasks are cancellable too — waiting is not a commitment (C14).
+      if (live || t.phase === 'QUEUED') {
+        actions.append(btn(t.phase === 'QUEUED' ? 'Cancel' : 'Stop', () => ctx.send({ kind: 'stop-task', taskId: t.spec.id }), 'danger'));
+      }
+      // worktreePath goes null when the merge tears the worktree down (C12) —
+      // both buttons act on the directory, so both gate on it.
       if (t.worktreePath !== null) {
         actions.append(btn('Open worktree', () => ctx.send({ kind: 'open-worktree', taskId: t.spec.id })));
+        actions.append(btn('View diff', () => ctx.send({ kind: 'view-diff', taskId: t.spec.id })));
       }
-      actions.append(btn('View diff', () => ctx.send({ kind: 'view-diff', taskId: t.spec.id })));
       if (t.phase === 'READY') actions.append(btn('Merge now', () => ctx.send({ kind: 'merge-task', taskId: t.spec.id })));
       sec.append(actions);
 

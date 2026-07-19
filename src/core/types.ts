@@ -378,7 +378,9 @@ export type ArgusEventBody =
   | { type: 'scope-expanded'; taskId: TaskId; glob: string }
   // --- inbox ---
   | { type: 'inbox-raised'; item: InboxItem }
-  | { type: 'inbox-resolved'; itemId: InboxItemId; resolution: InboxResolution };
+  | { type: 'inbox-resolved'; itemId: InboxItemId; resolution: InboxResolution }
+  /** The item's task died (stop/budget/dispose) — expired, not answered. */
+  | { type: 'inbox-voided'; itemId: InboxItemId };
 
 // ---------------------------------------------------------------------------
 // FleetState — fold(events)

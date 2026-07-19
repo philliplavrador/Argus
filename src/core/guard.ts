@@ -42,7 +42,8 @@ const RISKY_BASH = [
   /\bgit\s+switch\b/i,
   /\bnpm\s+publish\b/i,
   /\bvsce\s+publish\b/i,
-  /\bRemove-Item\b.*\b(-Recurse|-Force)\b/i,
+  // NB: \b cannot sit before '-' (both sides non-word) — match the space.
+  /\bRemove-Item\b.*\s-(Recurse|Force)\b/i,
   /\bshutdown\b/i,
   /\bformat\b\s+[a-z]:/i,
 ];
@@ -124,13 +125,19 @@ function extractCommand(input: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
 
-/** Absolute → repo-relative (or null if outside); relative → normalized as-is. */
+/**
+ * Absolute → repo-relative (or null if outside). Relative paths resolve
+ * against the worktree (the agent's cwd) and must STILL land inside it:
+ * normalizing `../../x` in isolation clamps the dots away and silently
+ * re-roots an escaping path inside the repo — fail OPEN. Joining first makes
+ * the containment check real (found by the adversarial review, C6).
+ */
 function resolveAgainst(worktreeRoot: string, p: string): string | null {
   const norm = normalizePath(p);
   if (isAbsolute(norm)) {
     return toRepoRelative(worktreeRoot, norm);
   }
-  return norm;
+  return toRepoRelative(worktreeRoot, `${worktreeRoot}/${p}`);
 }
 
 function isAbsolute(p: string): boolean {

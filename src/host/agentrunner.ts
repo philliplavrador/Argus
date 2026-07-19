@@ -126,15 +126,16 @@ function isAbsolutePathish(p: string): boolean {
 
 /**
  * Repo-relative form of a tool path: absolute paths resolve against the
- * worktree (null when outside it); relative paths are the agent's cwd-relative
- * form already and normalize as-is.
+ * worktree (null when outside it); relative paths join the worktree first so
+ * a `../`-escaping path resolves to null instead of clamping back inside
+ * (mirrors guard.ts resolveAgainst — adversarial review C6).
  */
 function toWorktreeRelative(worktreeRoot: string, raw: string): string | null {
   const norm = normalizePath(raw);
   if (isAbsolutePathish(norm)) {
     return toRepoRelative(worktreeRoot, norm);
   }
-  return norm;
+  return toRepoRelative(worktreeRoot, `${worktreeRoot}/${raw}`);
 }
 
 const PATH_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'Read']);
@@ -246,6 +247,8 @@ class AgentSession {
   private stopRequested = false;
   private stopReason: string | null = null;
   private lastOutcome: AgentOutcome | null = null;
+  /** Highest session-cumulative cost already reported as usage deltas. */
+  private reportedCostUsd = 0;
 
   private resolveDone!: (outcome: AgentOutcome) => void;
   readonly done: Promise<AgentOutcome>;
@@ -527,6 +530,10 @@ class AgentSession {
       }
       answers[question] = answerString(resolution, multiSelect);
     }
+    if (Object.keys(answers).length === 0) {
+      // Zero parseable questions: never silently "answer" with nothing.
+      return { behavior: 'deny', message: 'Argus: AskUserQuestion carried no parseable questions — rephrase and ask again.' };
+    }
     return { behavior: 'allow', updatedInput: { ...input, answers } };
   }
 
@@ -539,11 +546,22 @@ class AgentSession {
     if (resolution.rkind !== 'scope-escalation') {
       return { behavior: 'deny', message: 'Argus: mismatched resolution for scope escalation' };
     }
+    // A risky-Bash escalation carries the COMMAND in `path` — it is not a
+    // file path: recording it as a write would corrupt the collision
+    // instrumentation, and "expanding scope" by a command string is
+    // meaningless (review C7). Allow is allow; nothing else applies.
+    const isPathless = tool === 'Bash';
     switch (resolution.action) {
       case 'allow-once':
-        this.emit({ type: 'path-write', taskId: this.opts.spec.id, path, tool });
+        if (!isPathless) {
+          this.emit({ type: 'path-write', taskId: this.opts.spec.id, path, tool });
+        }
         return { behavior: 'allow', updatedInput: input };
       case 'expand-scope':
+        if (isPathless) {
+          // Treat as allow-once; there is no glob to widen for a command.
+          return { behavior: 'allow', updatedInput: input };
+        }
         // The orchestrator separately records the spec change; the runner only
         // widens its own live gate.
         this.currentScope = { include: [...this.currentScope.include, resolution.glob] };
@@ -642,10 +660,15 @@ class AgentSession {
         return;
       }
       if (msg.type === 'result') {
+        // total_cost_usd is SESSION-CUMULATIVE; a steered task sees several
+        // result messages, so emit only the increment (review C8).
+        const total = typeof msg.total_cost_usd === 'number' && Number.isFinite(msg.total_cost_usd) ? msg.total_cost_usd : 0;
+        const delta = Math.max(0, total - this.reportedCostUsd);
+        this.reportedCostUsd = Math.max(this.reportedCostUsd, total);
         this.emit({
           type: 'usage',
           taskId,
-          costUsdDelta: msg.total_cost_usd ?? 0,
+          costUsdDelta: delta,
           tokensDelta: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         });
         if (msg.subtype === 'success') {
