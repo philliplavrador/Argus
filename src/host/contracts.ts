@@ -136,6 +136,8 @@ export interface StartAgentOptions {
   worktreePath: string;
   config: ArgusConfig;
   callbacks: AgentCallbacks;
+  /** Directory for raw SDK stream logs; the runner writes `<logDir>/<taskId>.jsonl`. */
+  logDir: string;
 }
 
 /** Spawn an agent for a task. One call per task run. */
