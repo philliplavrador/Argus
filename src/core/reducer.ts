@@ -208,6 +208,13 @@ export function reduce(state: FleetState, event: ArgusEvent): FleetState {
           : { ...t, reads: addPath(t.reads, event.path) },
       );
 
+    case 'scope-expanded':
+      return withTask(base, event.taskId, (t) =>
+        typeof event.glob === 'string' && event.glob.length > 0 && !t.spec.scope.include.includes(event.glob)
+          ? { ...t, spec: { ...t.spec, scope: { include: [...t.spec.scope.include, event.glob] } } }
+          : t,
+      );
+
     case 'inbox-raised':
       return applyInboxRaised(base, event.item);
 
@@ -371,14 +378,26 @@ function applyTaskCreated(base: FleetState, spec: Task['spec'], ts: string): Fle
 
 function applyTaskReady(base: FleetState, taskId: TaskId): FleetState {
   const t = base.tasks[taskId];
-  if (t === undefined || t.phase !== 'VERIFYING') {
+  // VERIFYING → READY is the gate-pass path; MERGING → READY is a merge
+  // attempt backing off (conflict resolved by hand, retry later) — it must
+  // also release the fleet-wide merge slot and clear any block marker.
+  if (t === undefined || (t.phase !== 'VERIFYING' && t.phase !== 'MERGING')) {
     return base;
   }
-  const tasks = { ...base.tasks, [taskId]: { ...t, phase: 'READY' as TaskPhase } };
+  const fromMerging = t.phase === 'MERGING';
+  const tasks = {
+    ...base.tasks,
+    [taskId]: { ...t, phase: 'READY' as TaskPhase, blockedOn: null, blockedSince: null },
+  };
   const mergeQueue = base.mergeQueue.includes(taskId)
     ? base.mergeQueue
     : [...base.mergeQueue, taskId];
-  return { ...base, tasks, mergeQueue };
+  return {
+    ...base,
+    tasks,
+    mergeQueue,
+    merging: fromMerging && base.merging === taskId ? null : base.merging,
+  };
 }
 
 function applyMergeStarted(base: FleetState, taskId: TaskId): FleetState {

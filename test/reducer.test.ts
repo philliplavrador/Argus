@@ -448,6 +448,37 @@ test('terminal phases are frozen: task-failed on a DONE task is a no-op', () => 
   assert.equal(done.tasks['a'].failureReason, null);
 });
 
+test('task-ready from MERGING releases the merge slot and re-queues (merge back-off path)', () => {
+  const s = fold(
+    ...toRunning('a'),
+    { type: 'task-verifying', taskId: 'a' },
+    { type: 'task-ready', taskId: 'a' },
+    { type: 'merge-started', taskId: 'a' },
+    { type: 'task-blocked', taskId: 'a', itemId: 'a#1' }, // conflict item pending
+    { type: 'task-ready', taskId: 'a' }, // operator chose open-editor → back off
+  );
+  assert.equal(s.tasks['a'].phase, 'READY');
+  assert.equal(s.tasks['a'].blockedOn, null);
+  assert.equal(s.merging, null);
+  assert.deepEqual(s.mergeQueue, ['a']);
+});
+
+test('task-ready from RUNNING stays a no-op', () => {
+  const s = fold(...toRunning('a'), { type: 'task-ready', taskId: 'a' });
+  assert.equal(s.tasks['a'].phase, 'RUNNING');
+  assert.deepEqual(s.mergeQueue, []);
+});
+
+test('scope-expanded appends a new glob to the task spec, once', () => {
+  const s = fold(
+    ...toRunning('a'),
+    { type: 'scope-expanded', taskId: 'a', glob: 'lib/**' },
+    { type: 'scope-expanded', taskId: 'a', glob: 'lib/**' }, // duplicate → no-op
+    { type: 'scope-expanded', taskId: 'a', glob: '' }, // empty → no-op
+  );
+  assert.deepEqual(s.tasks['a'].spec.scope.include, ['src/**', 'lib/**']);
+});
+
 test('task-cancelled accepts a null reason', () => {
   const s = fold(...toRunning('a'), { type: 'task-cancelled', taskId: 'a', reason: null });
   assert.equal(s.tasks['a'].phase, 'CANCELLED');

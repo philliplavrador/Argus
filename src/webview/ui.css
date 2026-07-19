@@ -1,0 +1,277 @@
+/*
+ * Shared shell + component styles. Tab-specific styles live in tabs/<tab>.css.
+ * Every color/duration/radius references a token from theme.css — a hex here
+ * is a bug.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--argus-bg);
+  color: var(--argus-text);
+  font-family: var(--argus-font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+code,
+.mono {
+  font-family: var(--argus-font-mono);
+  font-size: 12px;
+}
+
+/* ---- Tab bar ---------------------------------------------------------- */
+
+.tabbar {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3) 0;
+  border-bottom: 1px solid var(--argus-border);
+  flex: none;
+}
+
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-text-muted);
+  font: inherit;
+  font-weight: 500;
+  padding: 6px 12px 8px;
+  border-radius: var(--argus-radius-small) var(--argus-radius-small) 0 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color var(--dur-fast) var(--argus-ease), border-color var(--dur-fast) var(--argus-ease);
+}
+
+.tab:hover {
+  color: var(--argus-text);
+}
+
+.tab.active {
+  color: var(--argus-text);
+  border-bottom-color: var(--argus-accent);
+}
+
+.tab.has-star {
+  color: var(--argus-accent);
+}
+
+.tabbody {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-3);
+}
+
+/* ---- Buttons ---------------------------------------------------------- */
+
+button.btn {
+  appearance: none;
+  font: inherit;
+  border-radius: var(--argus-radius-small);
+  border: 1px solid var(--argus-border);
+  background: var(--argus-surface);
+  color: var(--argus-text);
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--argus-ease), border-color var(--dur-fast) var(--argus-ease);
+}
+
+button.btn:hover {
+  background: var(--argus-surface-raised);
+}
+
+button.btn.primary {
+  background: var(--argus-accent);
+  border-color: var(--argus-accent);
+  color: #fff;
+}
+
+button.btn.primary:hover {
+  background: var(--argus-accent-hover);
+  border-color: var(--argus-accent-hover);
+}
+
+button.btn.danger {
+  color: var(--argus-danger);
+}
+
+button.btn:focus-visible,
+.tab:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--argus-accent);
+  outline-offset: 1px;
+}
+
+/* ---- Inputs ------------------------------------------------------------ */
+
+input[type='text'],
+input[type='number'],
+textarea,
+select {
+  font: inherit;
+  color: var(--argus-text);
+  background: var(--argus-surface);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+  padding: 5px 8px;
+  width: 100%;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+
+label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: var(--sp-1);
+}
+
+.field {
+  margin-bottom: var(--sp-3);
+}
+
+.hint {
+  color: var(--argus-text-muted);
+  font-size: 12px;
+  margin-top: var(--sp-1);
+}
+
+/* ---- Cards & pills ----------------------------------------------------- */
+
+.card {
+  background: var(--argus-surface);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  box-shadow: var(--argus-shadow);
+  transition: border-color var(--dur-fast) var(--argus-ease);
+}
+
+.pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--argus-surface-raised);
+  color: var(--argus-text-muted);
+}
+
+.pill.run {
+  background: var(--argus-accent-subtle);
+  color: var(--argus-accent);
+}
+
+.pill.ok {
+  background: color-mix(in srgb, var(--argus-success) 14%, transparent);
+  color: var(--argus-success);
+}
+
+.pill.warn {
+  background: color-mix(in srgb, var(--argus-warn) 14%, transparent);
+  color: var(--argus-warn);
+}
+
+.pill.bad {
+  background: color-mix(in srgb, var(--argus-danger) 14%, transparent);
+  color: var(--argus-danger);
+}
+
+/* ---- The star ---------------------------------------------------------- */
+
+.star {
+  color: var(--argus-accent);
+  font-weight: 700;
+  cursor: pointer;
+  animation: star-pulse 900ms var(--argus-ease) 1;
+}
+
+@keyframes star-pulse {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star {
+    animation: none;
+  }
+}
+
+/* ---- Empty states ------------------------------------------------------ */
+
+.empty {
+  max-width: 460px;
+  margin: 18vh auto 0;
+  text-align: center;
+  color: var(--argus-text-muted);
+}
+
+.empty h2 {
+  color: var(--argus-text);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 var(--sp-2);
+}
+
+.empty .btn {
+  margin-top: var(--sp-3);
+}
+
+/* ---- Toasts ------------------------------------------------------------ */
+
+.toast {
+  position: fixed;
+  bottom: var(--sp-3);
+  right: var(--sp-3);
+  max-width: 420px;
+  background: var(--argus-surface-raised);
+  border: 1px solid var(--argus-border);
+  border-left: 3px solid var(--argus-accent);
+  border-radius: var(--argus-radius-small);
+  padding: var(--sp-2) var(--sp-3);
+  box-shadow: var(--argus-shadow);
+  opacity: 1;
+  transition: opacity 300ms var(--argus-ease);
+  z-index: 10;
+}
+
+.toast-warn {
+  border-left-color: var(--argus-warn);
+}
+
+.toast-error {
+  border-left-color: var(--argus-danger);
+}
+
+.toast.gone {
+  opacity: 0;
+}

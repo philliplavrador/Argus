@@ -374,6 +374,8 @@ export type ArgusEventBody =
   // --- scope instrumentation (§7) ---
   | { type: 'path-write'; taskId: TaskId; path: string; tool: string }
   | { type: 'path-read'; taskId: TaskId; path: string }
+  /** An expand-scope escalation resolution widened the task's declared scope. */
+  | { type: 'scope-expanded'; taskId: TaskId; glob: string }
   // --- inbox ---
   | { type: 'inbox-raised'; item: InboxItem }
   | { type: 'inbox-resolved'; itemId: InboxItemId; resolution: InboxResolution };
@@ -412,10 +414,13 @@ export interface FleetState {
 export type HostToWebview =
   | { kind: 'snapshot'; state: FleetState }
   | { kind: 'events'; events: ArgusEvent[] }
+  /** Full event history from the log, on request (Timeline backfill). */
+  | { kind: 'history'; events: ArgusEvent[] }
   | { kind: 'toast'; level: 'info' | 'warn' | 'error'; text: string };
 
 export type WebviewToHost =
   | { kind: 'ready' }
+  | { kind: 'request-history' }
   | { kind: 'create-task'; spec: TaskSpec }
   | { kind: 'answer'; itemId: InboxItemId; resolution: InboxResolution }
   | { kind: 'stop-task'; taskId: TaskId }
