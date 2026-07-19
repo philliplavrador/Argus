@@ -23,6 +23,8 @@ export interface PanelHost {
   onEvent(cb: (e: ArgusEvent, s: FleetState) => void): { dispose(): void };
   /** UI intents; errors are caught here and surfaced as toasts. */
   handleIntent(msg: WebviewToHost): Promise<void>;
+  /** Full event history from the log (Timeline backfill). */
+  history(): Promise<ArgusEvent[]>;
 }
 
 export class ArgusPanel {
@@ -63,6 +65,10 @@ export class ArgusPanel {
         const msg = raw as WebviewToHost;
         if (msg.kind === 'ready') {
           this.post({ kind: 'snapshot', state: this.host.state });
+          return;
+        }
+        if (msg.kind === 'request-history') {
+          void this.host.history().then((events) => this.post({ kind: 'history', events }));
           return;
         }
         void this.host.handleIntent(msg).catch((err) => {

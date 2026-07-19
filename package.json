@@ -1,8 +1,8 @@
 {
   "name": "argus",
   "displayName": "Argus",
-  "description": "Cockpit for a multi-agent Claude Code fleet. Agents write state files; Argus renders them and lets you answer agent questions with radio buttons. Files are the contract.",
-  "version": "0.1.0",
+  "description": "Run several Claude Code agents on one large repository at the same time — worktree isolation per task, scope enforcement at write time, one inbox for every agent's questions, and a serialized merge queue.",
+  "version": "2.0.0",
   "publisher": "phillip-lavrador",
   "license": "MIT",
   "author": "Phillip Lavrador",
@@ -14,83 +14,39 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "workspaceContains:workflow/queue",
-    "workspaceContains:.scratch/fleet",
-    "onStartupFinished"
+    "workspaceContains:.argus"
   ],
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "argus",
-          "title": "Argus",
-          "icon": "$(eye)"
-        }
-      ]
-    },
-    "views": {
-      "argus": [
-        {
-          "id": "argusFleet",
-          "name": "Fleet",
-          "icon": "$(eye)"
-        }
-      ]
-    },
-    "viewsWelcome": [
-      {
-        "view": "argusFleet",
-        "contents": "No fleet state found.\nArgus reads task state from `argus.stateRoot` (default `.scratch/fleet`) and questions from `argus.questionRoot` (default `workflow`). It appears here as soon as an agent writes either. See SPEC.md in the Argus repo for the file contract."
-      }
-    ],
     "commands": [
       {
-        "command": "argus.refresh",
-        "title": "Argus: Refresh Fleet View",
-        "icon": "$(refresh)"
+        "command": "argus.open",
+        "title": "Argus: Open Fleet Panel",
+        "icon": "$(eye)"
       },
       {
-        "command": "argus.openTask",
-        "title": "Argus: Open Task Progress"
+        "command": "argus.init",
+        "title": "Argus: Initialize Workspace"
       },
       {
-        "command": "argus.openQuestion",
-        "title": "Argus: Answer Fleet Question"
+        "command": "argus.collisionReport",
+        "title": "Argus: Collision Report"
+      },
+      {
+        "command": "argus.stopAll",
+        "title": "Argus: Stop All Agents"
+      },
+      {
+        "command": "argus.cleanupWorktrees",
+        "title": "Argus: Clean Up Stale Worktrees"
       }
     ],
     "menus": {
-      "view/title": [
+      "editor/title": [
         {
-          "command": "argus.refresh",
-          "when": "view == argusFleet",
+          "command": "argus.open",
           "group": "navigation"
         }
-      ],
-      "commandPalette": [
-        {
-          "command": "argus.openTask",
-          "when": "false"
-        },
-        {
-          "command": "argus.openQuestion",
-          "when": "false"
-        }
       ]
-    },
-    "configuration": {
-      "title": "Argus",
-      "properties": {
-        "argus.stateRoot": {
-          "type": "string",
-          "default": ".scratch/fleet",
-          "description": "Workspace-relative folder where fleet agents write machine state (tasks/*/STATUS.json, watchdog/sweep.json)."
-        },
-        "argus.questionRoot": {
-          "type": "string",
-          "default": "workflow",
-          "description": "Workspace-relative folder holding the human-facing question queue (queue/*.md, resolved/, assets/)."
-        }
-      }
     }
   },
   "scripts": {
@@ -101,11 +57,9 @@
     "test": "tsc -p tsconfig.test.json && node --test \"out-test/test/*.test.js\""
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.214",
-    "markdown-it": "^14.1.0"
+    "@anthropic-ai/claude-agent-sdk": "^0.3.214"
   },
   "devDependencies": {
-    "@types/markdown-it": "^14.1.2",
     "@types/node": "^18.19.0",
     "@types/vscode": "1.85.0",
     "@vscode/vsce": "^3.0.0",

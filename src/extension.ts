@@ -1,220 +1,365 @@
 /**
- * Argus — cockpit for a multi-agent Claude Code fleet.
+ * Argus v2 activation — thin glue between VS Code and the Orchestrator.
  *
- * Files are the contract (SPEC.md): agents write STATUS.json and queue/*.md;
- * Argus renders them and writes checkbox answers. It never runs agents and
- * never moves, renames, or deletes a queue file.
- *
- * Ordering invariants in here:
- * - Watchers are created BEFORE the first scan, so a file born mid-scan
- *   still produces an event (the debounced refresh is idempotent).
- * - knownQuestions is seeded from a scan exactly once, at activation;
- *   afterwards onDidCreate is the only place a file becomes known-and-
- *   toasted, so a manual Refresh can never swallow a toast.
- * - Scans carry a generation counter; a stale scan completing late is
- *   discarded instead of regressing the snapshot.
- * - Watchers re-point whenever the effective fleet folder or the configured
- *   roots change (config change, multi-root fleet booting in a different
- *   folder, manual refresh).
+ * The orchestrator boots lazily on the first command that needs it and lives
+ * in the extension host until deactivation. The webview panel is a disposable
+ * view over it. Window close necessarily ends the agent subprocesses (they
+ * are children of this process); crash recovery replays the event log on the
+ * next boot and marks interrupted tasks honestly.
  */
 
-import * as vscode from "vscode";
-import { isTemplatePlaceholder, parseQuestion } from "./lib/question";
-import { emptySnapshot, FleetSnapshot, getConfig, pickWorkspaceFolder, readText, scanFleet } from "./model";
-import { AnswerPanelManager } from "./panel";
-import { ArgusStatusBar } from "./statusbar";
-import { FleetTreeProvider } from "./tree";
+import { exec } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
 
-const REFRESH_DEBOUNCE_MS = 300;
+import { collisionReport, renderCollisionReport } from './core/collision';
+import { detectProfile, PROFILE_CANDIDATE_FILES } from './core/profile';
+import { blockedTaskIds, isLivePhase } from './core/reducer';
+import { ArgusConfig, ArgusEvent, DEFAULT_CONFIG, RepoProfile, WebviewToHost } from './core/types';
+import { startAgent } from './host/agentrunner';
+import { ShellGateRunner } from './host/gates';
+import { JsonlEventLog } from './host/eventlog';
+import { Orchestrator } from './host/orchestrator';
+import { ArgusPanel, PanelHost } from './host/panel';
+import { GitWorktreeManager } from './host/worktrees';
+
+let orchestrator: Orchestrator | undefined;
+let eventLog: JsonlEventLog | undefined;
+let statusBar: vscode.StatusBarItem | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  const tree = new FleetTreeProvider();
-  const statusBar = new ArgusStatusBar();
-  let snapshot: FleetSnapshot = emptySnapshot();
-  const panels = new AnswerPanelManager(() => snapshot.folder);
-  /** Queue files already seen — a create event for one of these never toasts. */
-  const knownQuestions = new Set<string>();
-  let watchers: vscode.FileSystemWatcher[] = [];
-  let watchedFolder: vscode.WorkspaceFolder | undefined;
-  let watchedKey = "";
-  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-  let scanGen = 0;
-
-  const view = vscode.window.createTreeView("argusFleet", { treeDataProvider: tree });
-
-  function watchKeyFor(folder: vscode.WorkspaceFolder | undefined): string {
-    const { stateRoot, questionRoot } = getConfig();
-    return `${folder?.uri.toString() ?? ""}|${stateRoot}|${questionRoot}`;
-  }
-
-  async function refresh(seedKnown = false): Promise<void> {
-    const gen = ++scanGen;
-    const next = await scanFleet();
-    if (gen !== scanGen) {
-      return; // a newer scan superseded this one — never regress the snapshot
-    }
-    snapshot = next;
-    const current = new Set(snapshot.questions.map((q) => q.uri.toString()));
-    for (const known of [...knownQuestions]) {
-      if (!current.has(known)) {
-        knownQuestions.delete(known); // agent archived it
-      }
-    }
-    if (seedKnown) {
-      // Activation only: pre-existing files must not toast.
-      for (const key of current) {
-        knownQuestions.add(key);
-      }
-    }
-    tree.setSnapshot(snapshot);
-    statusBar.update(snapshot);
-    // The fleet may live in a different folder than the watchers cover
-    // (multi-root: fallback folder A watched, fleet boots in folder B).
-    if (watchKeyFor(snapshot.folder) !== watchedKey) {
-      setupWatchers(snapshot.folder);
-    }
-  }
-
-  function scheduleRefresh(): void {
-    if (refreshTimer !== undefined) {
-      clearTimeout(refreshTimer);
-    }
-    refreshTimer = setTimeout(() => {
-      refreshTimer = undefined;
-      void refresh();
-    }, REFRESH_DEBOUNCE_MS);
-  }
-
-  function isQueueFile(uri: vscode.Uri): boolean {
-    if (!watchedFolder) {
-      return false;
-    }
-    const queuePrefix =
-      vscode.Uri.joinPath(watchedFolder.uri, getConfig().questionRoot, "queue").path + "/";
-    return uri.path.startsWith(queuePrefix) && uri.path.endsWith(".md");
-  }
-
-  async function toastNewQuestion(uri: vscode.Uri): Promise<void> {
-    // No settle delay needed: the protocol makes queue files appear
-    // atomically (fill queue/.<name>.md.tmp, then rename — and .tmp names
-    // don't match our *.md filter). The placeholder check below is defense
-    // in depth against a non-atomic template copy.
-    let title = uri.path.split("/").pop() ?? "question";
-    try {
-      const q = parseQuestion(await readText(uri));
-      if (isTemplatePlaceholder(q)) {
-        return; // half-filled template — never toast it
-      }
-      if (q.title) {
-        title = q.title;
-      }
-      if (q.answeredIndices.length > 0) {
-        return; // arrived already answered — nothing to ask
-      }
-    } catch {
-      // unreadable → toast with the file name
-    }
-    const choice = await vscode.window.showInformationMessage(`Fleet question: ${title}`, "Answer", "Later");
-    if (choice === "Answer") {
-      await panels.open(uri);
-    }
-  }
-
-  function setupWatchers(folder: vscode.WorkspaceFolder | undefined): void {
-    for (const w of watchers) {
-      w.dispose();
-    }
-    watchers = [];
-    watchedFolder = folder;
-    watchedKey = watchKeyFor(folder);
-    if (!folder) {
-      return;
-    }
-    const { stateRoot, questionRoot } = getConfig();
-    for (const root of [stateRoot, questionRoot]) {
-      const watcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folder, `${root}/**`),
-      );
-      watcher.onDidCreate((uri) => {
-        if (isQueueFile(uri)) {
-          // Toast only for queue files born while the window is open: the
-          // activation-time seeding marks pre-existing files, so they
-          // never storm. onDidCreate is the SOLE place a file becomes
-          // known-and-toasted after activation.
-          if (!knownQuestions.has(uri.toString())) {
-            knownQuestions.add(uri.toString());
-            void toastNewQuestion(uri);
-          }
-          // Atomic in-place rewrites arrive as create (rename onto the name).
-          void panels.handleFileChange(uri);
-        }
-        scheduleRefresh();
-      });
-      watcher.onDidChange((uri) => {
-        if (isQueueFile(uri)) {
-          void panels.handleFileChange(uri);
-        }
-        scheduleRefresh();
-      });
-      watcher.onDidDelete((uri) => {
-        if (isQueueFile(uri)) {
-          void panels.handleFileChange(uri);
-        }
-        scheduleRefresh();
-      });
-      watchers.push(watcher);
-    }
-  }
-
-  /** Re-point watchers (if needed) and rescan. Used by refresh command,
-   *  config changes, and workspace-folder changes. */
-  async function rebuild(): Promise<void> {
-    const folder = await pickWorkspaceFolder();
-    if (watchKeyFor(folder) !== watchedKey) {
-      setupWatchers(folder);
-    }
-    await refresh();
-  }
+  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
+  statusBar.command = 'argus.open';
+  statusBar.text = '$(eye) Argus';
+  statusBar.tooltip = 'Open the Argus fleet panel';
+  statusBar.show();
+  context.subscriptions.push(statusBar);
 
   context.subscriptions.push(
-    view,
-    statusBar,
-    panels,
-    { dispose: () => { for (const w of watchers) { w.dispose(); } } },
-    { dispose: () => { if (refreshTimer !== undefined) { clearTimeout(refreshTimer); } } },
-
-    vscode.commands.registerCommand("argus.refresh", () => rebuild()),
-    vscode.commands.registerCommand("argus.openQuestion", (uri: vscode.Uri) => panels.open(uri)),
-    vscode.commands.registerCommand(
-      "argus.openTask",
-      async (dirUri: vscode.Uri, statusUri: vscode.Uri) => {
-        const progress = vscode.Uri.joinPath(dirUri, "PROGRESS.md");
-        try {
-          await vscode.workspace.fs.stat(progress);
-          await vscode.commands.executeCommand("vscode.open", progress);
-        } catch {
-          await vscode.commands.executeCommand("vscode.open", statusUri);
-        }
-      },
-    ),
-
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("argus")) {
-        void rebuild();
+    vscode.commands.registerCommand('argus.open', async () => {
+      const orch = await ensureOrchestrator(context);
+      if (orch === undefined) {
+        return;
       }
+      ArgusPanel.createOrShow(context.extensionUri, makePanelHost(orch));
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void rebuild()),
+    vscode.commands.registerCommand('argus.init', async () => {
+      const root = workspaceRoot();
+      if (root === undefined) {
+        return;
+      }
+      const summary = await initWorkspace(root);
+      void vscode.window.showInformationMessage(`Argus: ${summary}`);
+    }),
+    vscode.commands.registerCommand('argus.collisionReport', async () => {
+      const orch = await ensureOrchestrator(context);
+      if (orch === undefined || eventLog === undefined) {
+        return;
+      }
+      const { events } = await eventLog.replay();
+      const md = renderCollisionReport(collisionReport(events, new Date().toISOString()));
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: md });
+      await vscode.window.showTextDocument(doc, { preview: false });
+    }),
+    vscode.commands.registerCommand('argus.stopAll', async () => {
+      await orchestrator?.stopAll('operator ran Argus: Stop All Agents');
+    }),
+    vscode.commands.registerCommand('argus.cleanupWorktrees', async () => {
+      const orch = await ensureOrchestrator(context);
+      if (orch === undefined) {
+        return;
+      }
+      const n = await orch.cleanupStaleWorktrees();
+      void vscode.window.showInformationMessage(`Argus: removed ${n} stale worktree(s).`);
+    }),
   );
-
-  void (async () => {
-    // Watchers FIRST, then the seeding scan — a file created during the
-    // scan gets an event (toast + debounced refresh) instead of vanishing
-    // into the gap.
-    setupWatchers(await pickWorkspaceFolder());
-    await refresh(true);
-  })();
 }
 
-export function deactivate(): void {
-  // All disposal is handled via context.subscriptions.
+export async function deactivate(): Promise<void> {
+  await orchestrator?.dispose();
+  orchestrator = undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+
+function workspaceRoot(): string | undefined {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (folder === undefined) {
+    void vscode.window.showErrorMessage('Argus needs an open folder.');
+    return undefined;
+  }
+  return folder.uri.fsPath;
+}
+
+async function ensureOrchestrator(context: vscode.ExtensionContext): Promise<Orchestrator | undefined> {
+  if (orchestrator !== undefined) {
+    return orchestrator;
+  }
+  const repoRoot = workspaceRoot();
+  if (repoRoot === undefined) {
+    return undefined;
+  }
+  if (!(await isGitRepo(repoRoot))) {
+    void vscode.window.showErrorMessage(
+      'Argus runs tasks in git worktrees, so the workspace must be a git repository.',
+    );
+    return undefined;
+  }
+
+  await initWorkspace(repoRoot);
+  const argusDir = path.join(repoRoot, '.argus');
+  const config = await loadConfig(argusDir);
+  const profile = await loadProfile(argusDir);
+
+  eventLog = new JsonlEventLog(path.join(argusDir, 'state', 'events.jsonl'));
+  const orch = new Orchestrator({
+    repoRoot,
+    argusDir,
+    eventLog,
+    worktrees: new GitWorktreeManager(repoRoot),
+    startAgent: (opts) => startAgent(opts),
+    gates: new ShellGateRunner(),
+    config,
+    installCommand: installCommandFor(profile),
+    toast: (level, text) => {
+      ArgusPanel.current?.toast(level, text);
+      if (level === 'error') {
+        void vscode.window.showErrorMessage(`Argus: ${text}`);
+      } else if (level === 'warn') {
+        void vscode.window.showWarningMessage(`Argus: ${text}`);
+      }
+    },
+  });
+
+  const version = (context.extension.packageJSON as { version?: string }).version ?? '2.0.0';
+  const stale = await orch.start(version);
+  orchestrator = orch;
+
+  orch.onEvent((_e, s) => updateStatusBar(s));
+  updateStatusBar(orch.state);
+
+  if (stale.length > 0) {
+    void vscode.window
+      .showWarningMessage(
+        `Argus found ${stale.length} worktree(s) left behind by a previous session.`,
+        'Clean up',
+        'Leave them',
+      )
+      .then(async (choice) => {
+        if (choice === 'Clean up') {
+          const n = await orch.cleanupStaleWorktrees();
+          void vscode.window.showInformationMessage(`Argus: removed ${n} stale worktree(s).`);
+        }
+      });
+  }
+  return orch;
+}
+
+function isGitRepo(root: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    exec('git rev-parse --git-dir', { cwd: root, windowsHide: true }, (err) => resolve(err === null));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Workspace scaffolding (argus.init — idempotent)
+// ---------------------------------------------------------------------------
+
+async function initWorkspace(repoRoot: string): Promise<string> {
+  const argusDir = path.join(repoRoot, '.argus');
+  const created: string[] = [];
+  for (const dir of ['state', 'logs', 'worktrees', 'agents']) {
+    await fs.mkdir(path.join(argusDir, dir), { recursive: true });
+  }
+
+  const configPath = path.join(argusDir, 'config.json');
+  if (!(await exists(configPath))) {
+    await fs.writeFile(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n', 'utf8');
+    created.push('config.json');
+  }
+
+  // The profile is regenerable — refresh it on every init.
+  const profile = await detectProfileFromDisk(repoRoot);
+  await fs.writeFile(path.join(argusDir, 'profile.json'), JSON.stringify(profile, null, 2) + '\n', 'utf8');
+  created.push('profile.json');
+
+  const ignoreLines = ['.argus/state/', '.argus/worktrees/', '.argus/logs/'];
+  const gitignorePath = path.join(repoRoot, '.gitignore');
+  const existing = (await exists(gitignorePath)) ? await fs.readFile(gitignorePath, 'utf8') : '';
+  const missing = ignoreLines.filter((l) => !existing.split(/\r?\n/).includes(l));
+  if (missing.length > 0) {
+    const sep = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+    await fs.appendFile(gitignorePath, `${sep}${missing.join('\n')}\n`, 'utf8');
+    created.push('.gitignore entries');
+  }
+  return created.length > 0 ? `initialized ${created.join(', ')}` : 'workspace already initialized';
+}
+
+async function detectProfileFromDisk(repoRoot: string): Promise<RepoProfile> {
+  const files: { path: string; content: string }[] = [];
+  for (const rel of PROFILE_CANDIDATE_FILES) {
+    const abs = path.join(repoRoot, rel);
+    if (await exists(abs)) {
+      try {
+        files.push({ path: rel, content: await fs.readFile(abs, 'utf8') });
+      } catch {
+        // Unreadable candidate — the detector treats it as absent.
+      }
+    }
+  }
+  return detectProfile(files, new Date().toISOString());
+}
+
+async function loadConfig(argusDir: string): Promise<ArgusConfig> {
+  try {
+    const raw = JSON.parse(
+      await fs.readFile(path.join(argusDir, 'config.json'), 'utf8'),
+    ) as Partial<ArgusConfig>;
+    return { ...DEFAULT_CONFIG, ...raw };
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+async function loadProfile(argusDir: string): Promise<RepoProfile | null> {
+  try {
+    return JSON.parse(await fs.readFile(path.join(argusDir, 'profile.json'), 'utf8')) as RepoProfile;
+  } catch {
+    return null;
+  }
+}
+
+function installCommandFor(profile: RepoProfile | null): string | null {
+  switch (profile?.packageManager) {
+    case 'npm':
+      return 'npm install';
+    case 'pnpm':
+      return 'pnpm install';
+    case 'yarn':
+      return 'yarn';
+    case 'bun':
+      return 'bun install';
+    default:
+      return null;
+  }
+}
+
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel host — maps webview intents onto the orchestrator and VS Code
+// ---------------------------------------------------------------------------
+
+function makePanelHost(orch: Orchestrator): PanelHost {
+  return {
+    get state() {
+      return orch.state;
+    },
+    onEvent: (cb: (e: ArgusEvent, s: Orchestrator['state']) => void) => orch.onEvent(cb),
+    history: async () => {
+      if (eventLog === undefined) {
+        return [];
+      }
+      const { events } = await eventLog.replay();
+      return events;
+    },
+    handleIntent: async (msg: WebviewToHost): Promise<void> => {
+      switch (msg.kind) {
+        case 'ready':
+        case 'request-history':
+          return; // handled inside the panel
+        case 'create-task':
+          await orch.createTask(msg.spec);
+          return;
+        case 'answer':
+          await orch.answer(msg.itemId, msg.resolution);
+          return;
+        case 'stop-task':
+          await orch.stopTask(msg.taskId, 'stopped from the fleet panel');
+          return;
+        case 'steer':
+          await orch.steer(msg.taskId, msg.message);
+          return;
+        case 'open-worktree': {
+          const wt = orch.state.tasks[msg.taskId]?.worktreePath;
+          if (wt !== null && wt !== undefined) {
+            await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(wt));
+          }
+          return;
+        }
+        case 'view-diff':
+          await showTaskDiff(orch, msg.taskId);
+          return;
+        case 'merge-task':
+          orch.enqueueMerge(msg.taskId);
+          return;
+        case 'set-config':
+          await orch.setConfig(msg.config);
+          return;
+        case 'init-workspace': {
+          const summary = await initWorkspace(orch.repoRoot);
+          ArgusPanel.current?.toast('info', summary);
+          return;
+        }
+        case 'stop-all':
+          await orch.stopAll('operator pressed Stop All');
+          return;
+        case 'cleanup-worktrees': {
+          const n = await orch.cleanupStaleWorktrees();
+          ArgusPanel.current?.toast('info', `Removed ${n} stale worktree(s).`);
+          return;
+        }
+      }
+    },
+  };
+}
+
+async function showTaskDiff(orch: Orchestrator, taskId: string): Promise<void> {
+  const t = orch.state.tasks[taskId];
+  if (t === undefined || t.worktreePath === null) {
+    return;
+  }
+  const wt = t.worktreePath;
+  const run = (cmd: string, maxBuffer: number): Promise<string> =>
+    new Promise((resolve) => {
+      exec(cmd, { cwd: wt, windowsHide: true, maxBuffer }, (_err, stdout) => resolve(stdout));
+    });
+  const diff = await run('git diff HEAD', 32 * 1024 * 1024);
+  const committed = await run('git log --oneline -20', 1024 * 1024);
+  const content =
+    `# ${t.spec.title} — ${t.branch ?? ''}\n# Recent commits:\n${committed
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => `#   ${l}`)
+      .join('\n')}\n\n${diff.length > 0 ? diff : '# (no uncommitted changes in the worktree)'}\n`;
+  const doc = await vscode.workspace.openTextDocument({ language: 'diff', content });
+  await vscode.window.showTextDocument(doc, { preview: false });
+}
+
+// ---------------------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------------------
+
+function updateStatusBar(s: Orchestrator['state']): void {
+  if (statusBar === undefined) {
+    return;
+  }
+  const live = Object.values(s.tasks).filter((t) => isLivePhase(t.phase)).length;
+  const blocked = blockedTaskIds(s);
+  statusBar.text = `$(eye) ${live}▶ ${blocked.length}★`;
+  const lines = blocked.map((id) => {
+    const t = s.tasks[id];
+    return `★ ${t.spec.title} — waiting since ${t.blockedSince ?? '?'}`;
+  });
+  statusBar.tooltip = lines.length > 0 ? lines.join('\n') : 'Argus — no one is waiting on you';
 }
