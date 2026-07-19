@@ -1,36 +1,32 @@
 # Overnight build state — Argus v2
 
-- **Wall-clock start:** 2026-07-18 17:13 (UTC-7). 12h window ends ~05:13; build stops ~03:13.
-- **Last updated:** 2026-07-18 18:12 (UTC-7) — ~1h in.
-- **Branch:** `v2`, pushed through dca6cb3 (+ pending 5b commit).
+- **Wall-clock start:** 2026-07-18 17:13 (UTC-7). **Now:** 18:10 — 57 minutes in. Window to 05:13.
+- **Branch:** `v2`, pushed through d78ce81 (+ vsix + docs pending final commit).
 
 ## Resume protocol ("resume overnight")
 1. FIRST: `git -C "D:/Projects/Kosik's Kiosk" status --porcelain` → exactly ` M .claude/settings.json`, branch `feat/restructure`.
-2. This file → `git log --oneline v2` → decisions.md. Tree wins over this file.
-3. Continue from **Next action**. Never re-run spikes. Ask nothing.
+2. This file → `git log --oneline v2` → decisions.md. Tree wins.
+3. Continue from **Next action**. Never re-run spikes/smokes already recorded. Ask nothing.
 
-## Fixture
-- Clone at `<scratchpad>\kiosk-fixture` (Spike C mutated it and restored it clean on feat/restructure). Original READ-ONLY.
+## Phase status — EVERYTHING THROUGH PACKAGING IS DONE AND VERIFIED
+- Spikes: 4/4 PASS (committed). Pure core, shell, orchestrator, extension, four tabs: committed.
+- 243 unit tests green (`npm test`). `npm run compile` clean.
+- **Live slice smoke PASSED 17/17** (`node .argus-build/smoke/smoke-slice.cjs <fixture>`): real agents, question parked 8s → resumed with context → gate → merge onto base. First run caught a real scheduler race (fixed, decision D13, pinned in orchestrator.test.ts).
+- **Live merge-conflict smoke PASSED 6/6** (`node .argus-build/smoke/smoke-conflict.cjs <fixture>`).
+- **Chromium UI harness verified** — 6 screenshots in `.argus-build/screenshots/`.
+- **Real VS Code integration PASSED 14/14** (`node .argus-build/integration/run.cjs`) after fixing a packaging-fatal import.meta.url bug (esbuild shim).
+- **argus-2.0.0.vsix packaged (367KB) and install-verified in the sandboxed VS Code** (never the author's).
+- SPEC.md + README.md rewritten for v2 (committed d78ce81).
 
-## Phase status
-- **Phase 0 spikes: DONE, all four PASS** (committed 618e1be). Key: canUseTool inbox works (answers via updatedInput, no bare allowedTools); concurrency default 4 max 8; worktrees need core.longpaths + kill-then-force removal; UI batch 50ms.
-- **Phase 1 contracts: DONE** (137ef8e + additions).
-- **Phase 2 pure core: DONE, verified by me** (2deaf7c).
-- **Phase 3 shell: DONE, verified by me** — 235/235 tests green (dca6cb3). AgentRunner reviewed line-by-line.
-- **Phase 5a spine: DONE** (e12e81a) — orchestrator, gates, panel, webview skeleton, dual esbuild.
-- **Phase 4 tabs: RUNNING in background** — workflow `wf_85c499e3-125` (task w4crlt37s), 4 Opus agents on tabs/{fleet,inbox,timeline,settings}. Settings already landed on disk.
-- **Phase 5b: JUST FINISHED (uncommitted at last write)** — new extension.ts (activation, init scaffolding, panel host intents, status bar, collision report command), package.json v2.0.0 manifest, v0.1 sources deleted (tree/panel/statusbar/model/lib + 3 old test files), markdown-it dependency dropped. Typecheck green.
+## In flight RIGHT NOW
+- **Adversarial review workflow `wf_22caf8ca-c76`** (task wqk5eub4x): 4 Opus breakers over orchestrator / agentrunner / core+UI / windows-edges, findings then refuted by 2 skeptics each. If resuming after death: read the journal in the transcript dir; act only on findings marked surviving; then proceed to Next action.
 
-## Verified vs unverified
-- Verified by observation: all committed tests (235 passing when last run by me); dual esbuild builds; typecheck green after v0.1 deletion.
-- Written-but-unverified: extension.ts activation (never launched in a VS Code host yet); orchestrator task lifecycle (no live agent run through it yet); panel/webview rendering (never opened); everything Phase 4 agents are writing.
+## Next action (after the review returns)
+1. Fix confirmed findings (if any), re-run `npm test` + the affected smoke, commit.
+2. `git rm PLAN.md`.
+3. Kiosk read-only verification, output verbatim into REPORT.md.
+4. Write `.argus-build/REPORT.md` per PLAN §0.10, final commit + push. Stop cleanly.
 
-## Next action
-1. Commit Phase 5b (extension.ts + package.json + deletions) — files: src/extension.ts, src/host/panel.ts, package.json, package-lock.json + staged deletions.
-2. When Phase 4 workflow completes: typecheck + esbuild + review the four tabs, commit.
-3. Phase 6a: launch the F5 dev host against a THROWAWAY test repo (NOT the Kiosk original; use a fresh scratch clone of the fixture) and drive the slice live: create task → worktree → agent → ★ → answer → resume → verify → merge. Use Playwright/chrome-devtools if the webview is drivable, else drive orchestrator headless via a node script first (orchestrator is fully injectable — a headless smoke can run without VS Code).
-4. Then acceptance criteria sweep (§13), REPORT.md.
-
-## Half-done / must finish or revert
-- Phase 4 workflow in flight (`wf_85c499e3-125`). If dead: check src/webview/tabs/*.ts on disk; resume the workflow or finish tabs by hand.
-- Nothing else half-done.
+## Verified vs unverified (for the report's honesty section)
+- Everything in "Phase status" above is verified by observation (tool output in this session).
+- Honest partials: 2 concurrent live agents demonstrated (not 3); live window-kill crash test not performed (crash semantics unit-tested + integration-observed via replay); verbosity/effort behavioral deltas shown via prompt preview, not A/B agent runs; eye button contributed but never physically clicked (command path verified).
