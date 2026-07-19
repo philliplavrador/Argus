@@ -38,6 +38,21 @@ Revisit if: real webview use (Phase 6) shows IPC pressure — raise to 100ms, st
 Spike C: longpaths is unset at every scope on this machine; without it, deep paths break `git add`, make `git status` silently blind (rc=0!), and break worktree removal (deregisters but orphans the dir). Also `remove --force` while the agent lives orphans a locked dir git can no longer see. Both guardrails are mandatory, encoded in WorktreeManager.
 Revisit: never — this is measured Windows behavior.
 
+## D11 — No `argus.stopAgentsOnWindowClose` setting; deactivate() always disposes
+PLAN §3.1 sketched the setting, but SDK agent subprocesses are children of the extension host — closing the window kills them regardless of any setting, so shipping a toggle would be a fake promise. Instead: closing the PANEL costs nothing (the real deviation §3.1 wanted); deactivation aborts agents gracefully; a killed window is handled by crash replay marking interrupted tasks honestly. README documents this.
+Revisit if: the SDK ever supports detached/daemonized sessions.
+
+## D12 — Fleet agents run with `settingSources: []` (SDK isolation)
+Spawned agents load neither the operator's ~/.claude config nor project .claude settings/CLAUDE.md; the Argus prompt append carries the task contract. Keeps fleet behavior reproducible and prevents personal permission allowlists from silently shadowing ScopeGuard. Cost: agents lose repo CLAUDE.md context.
+Revisit if: task quality on real repos suffers — consider `settingSources: ['project']`.
+
+## D13 — The live smoke's first run caught a scheduler double-start race (fixed)
+pump() selected QUEUED tasks, but ineligibility only landed when task-started folded (async) — two createTask calls in one tick scheduled the same task twice; the duplicate provision failed the task while its real agent ran on. Fixed with a synchronous `scheduling` reservation set; pinned by orchestrator.test.ts. Recorded because it is the night's best argument for live smokes over unit tests alone.
+
+## D14 — Send-back and agent-fix spawn fresh sessions, not resume
+A gate failure sent back to the agent starts a new session whose prompt carries the failure output; same for merge-conflict fixers. The SDK supports resume (session id is recorded), which would preserve full context at lower token cost — deferred, not rejected: fresh sessions are simpler to reason about at 2am and demonstrably worked in the smoke.
+Revisit in: v2.1, as "resume with context" polish.
+
 ## D10 — Argus installs deps in fresh worktrees by default (`installDepsOnProvision: true`)
 Spike C measured per-worktree `npm install` on a warm cache at 6.6s/180MB — cheaper than robocopy and fully isolated (junctions confirmed unsafe: write-back through the junction lands in the shared source). Without install, verify gates die on missing node_modules. Config-off for non-node repos or speed.
 Revisit if: a target repo's cold-cache install is minutes — then pre-warm or disable.
