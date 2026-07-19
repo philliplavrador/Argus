@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Argus webview harness</title>
+<link rel="stylesheet" href="/dist/webview.css">
+<script>
+  // Scripted VS Code host: replies to 'ready' with the fixture snapshot and to
+  // 'request-history' with the fixture event stream; every other intent is
+  // recorded on window.__intents for assertions.
+  window.__intents = [];
+  let fixtureState = null;
+  let fixtureHistory = null;
+  const send = (msg) => window.postMessage(msg, '*');
+  function acquireVsCodeApi() {
+    return {
+      postMessage(msg) {
+        window.__intents.push(msg);
+        if (msg.kind === 'ready') {
+          const arm = () => {
+            if (fixtureState !== null) {
+              send({ kind: 'snapshot', state: fixtureState });
+            } else {
+              setTimeout(arm, 20);
+            }
+          };
+          arm();
+        }
+        if (msg.kind === 'request-history') {
+          const arm = () => {
+            if (fixtureHistory !== null) {
+              send({ kind: 'history', events: fixtureHistory });
+            } else {
+              setTimeout(arm, 20);
+            }
+          };
+          arm();
+        }
+      },
+      getState() {
+        return undefined;
+      },
+      setState() {},
+    };
+  }
+  // Theme control for screenshots: ?theme=light|dark (default dark).
+  const theme = new URLSearchParams(location.search).get('theme') === 'light' ? 'vscode-light' : 'vscode-dark';
+  document.addEventListener('DOMContentLoaded', () => document.body.classList.add(theme));
+  fetch('/.argus-build/smoke/ui/fixture-state.json').then((r) => r.json()).then((s) => { fixtureState = s; });
+  fetch('/.argus-build/smoke/ui/fixture-history.json').then((r) => r.json()).then((h) => { fixtureHistory = h; });
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script src="/dist/webview.js"></script>
+</body>
+</html>
