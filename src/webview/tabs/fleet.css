@@ -1,1 +1,334 @@
-﻿
+/*
+ * Fleet tab styles. Every colour, space, radius, and duration references a
+ * token from theme.css — a hard-coded hex, px duration, or font stack is a bug.
+ */
+
+/* ---- Sticky summary strip --------------------------------------------- */
+
+.fleet-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  background: var(--argus-bg);
+  border-bottom: 1px solid var(--argus-border);
+  padding: var(--sp-2) var(--sp-3);
+  /* Pull up over the tabbody padding so the strip pins flush to the top and
+     bleeds edge to edge; keep space before the first card. */
+  margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) var(--sp-3);
+}
+
+.fleet-stats {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  color: var(--argus-text-muted);
+  font-size: 12px;
+}
+
+.fleet-stats b {
+  color: var(--argus-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-sep {
+  color: var(--argus-border);
+}
+
+.fleet-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+
+/* ---- Task card --------------------------------------------------------- */
+
+.fleet-card {
+  cursor: pointer;
+}
+
+.fleet-card:hover {
+  border-color: color-mix(in srgb, var(--argus-accent) 30%, var(--argus-border));
+}
+
+.fleet-card.blocked {
+  background: var(--argus-accent-subtle);
+  border-color: color-mix(in srgb, var(--argus-warn) 45%, var(--argus-border));
+}
+
+/* Line 1: star · title · pill · right-aligned meta */
+.fleet-line1 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.fleet-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pill.muted {
+  opacity: 0.7;
+}
+
+.fleet-right {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex: none;
+  color: var(--argus-text-muted);
+  font-size: 12px;
+}
+
+.fleet-model {
+  color: var(--argus-text-muted);
+}
+
+.fleet-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The wait — the product's whole argument. Impossible to miss. */
+.fleet-waiting {
+  margin-top: var(--sp-2);
+  color: var(--argus-warn);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Progress / activity ---------------------------------------------- */
+
+.fleet-progress {
+  margin-top: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.fleet-track {
+  flex: 1;
+  height: 6px;
+  background: var(--argus-surface-raised);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.fleet-fill {
+  height: 100%;
+  background: var(--argus-accent);
+  border-radius: 999px;
+  transition: width var(--dur-slow) var(--argus-ease);
+}
+
+.fleet-steplabel {
+  flex: none;
+  font-size: 12px;
+  color: var(--argus-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fleet-activity {
+  margin-top: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--argus-text-muted);
+}
+
+.fleet-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--argus-text-muted);
+  flex: none;
+}
+
+.fleet-dot.pulse {
+  background: var(--argus-accent);
+  animation: fleet-pulse 1200ms var(--argus-ease) infinite;
+}
+
+@keyframes fleet-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-dot.pulse {
+    animation: none;
+  }
+}
+
+.fleet-activity-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---- Meta line --------------------------------------------------------- */
+
+.fleet-meta {
+  margin-top: var(--sp-2);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--argus-text-muted);
+}
+
+.fleet-scope {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.fleet-fail {
+  color: var(--argus-danger);
+}
+
+/* ---- Expanded body ----------------------------------------------------- */
+
+.fleet-expand {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--argus-border);
+  cursor: default;
+}
+
+.fleet-tail {
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--argus-surface-raised);
+  border-radius: var(--argus-radius-small);
+  padding: var(--sp-2);
+}
+
+.fleet-tail-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.fleet-tail-empty {
+  color: var(--argus-text-muted);
+}
+
+.fleet-actions-row {
+  margin-top: var(--sp-3);
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.fleet-steer {
+  margin-top: var(--sp-2);
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.fleet-steer input {
+  flex: 1;
+}
+
+.fleet-steer .btn {
+  flex: none;
+}
+
+/* ---- New-task composer overlay ---------------------------------------- */
+
+.fleet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--sp-5) var(--sp-3);
+  overflow-y: auto;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.fleet-composer {
+  width: 100%;
+  max-width: 560px;
+  background: var(--argus-surface);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius);
+  box-shadow: var(--argus-shadow);
+  padding: var(--sp-4);
+  cursor: default;
+}
+
+.fleet-composer h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.fleet-row2 {
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.fleet-row2 > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.fleet-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.fleet-checkbox input {
+  width: auto;
+}
+
+.fleet-checkbox label {
+  margin: 0;
+  font-weight: 400;
+}
+
+.fleet-error {
+  margin-top: var(--sp-1);
+  font-size: 12px;
+  color: var(--argus-danger);
+}
+
+.fleet-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+@media (max-width: 460px) {
+  .fleet-row2 {
+    flex-direction: column;
+    gap: 0;
+  }
+}

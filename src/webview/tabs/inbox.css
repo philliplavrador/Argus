@@ -1,1 +1,220 @@
-﻿
+/*
+ * Inbox tab — the decision queue. Every colour, space, radius and duration
+ * references a theme.css token; a hex here would be a bug.
+ */
+
+.inbox-hint {
+  font-size: 12px;
+  color: var(--argus-text-muted);
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--argus-border);
+}
+
+/* ---- The item card ----------------------------------------------------- */
+
+.inbox-item {
+  border-left: 2px solid transparent;
+}
+
+.inbox-item.selected {
+  border-left-color: var(--argus-accent);
+  background: var(--argus-accent-subtle);
+}
+
+.inbox-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.inbox-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-wait {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  color: var(--argus-text-muted);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--argus-ease);
+}
+
+.inbox-wait.over {
+  color: var(--argus-warn);
+  font-weight: 600;
+}
+
+/* Consistent vertical rhythm inside the body. */
+.inbox-body > * + * {
+  margin-top: var(--sp-2);
+}
+
+/* ---- Question ---------------------------------------------------------- */
+
+.inbox-qheader {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--argus-text-muted);
+}
+
+.inbox-question {
+  font-size: 14px;
+  margin: 0;
+}
+
+.inbox-opts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.inbox-opt {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--argus-text);
+  background: var(--argus-surface);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+  padding: var(--sp-2);
+  transition: border-color var(--dur-fast) var(--argus-ease),
+    background var(--dur-fast) var(--argus-ease);
+}
+
+.inbox-opt:hover {
+  border-color: var(--argus-accent);
+}
+
+.inbox-opt.chosen {
+  border-color: var(--argus-accent);
+  background: var(--argus-accent-subtle);
+}
+
+.inbox-key {
+  flex: none;
+  align-self: center;
+  min-width: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--argus-font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--argus-text-muted);
+  background: var(--argus-surface-raised);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+  padding: 3px 5px;
+}
+
+.inbox-opt.chosen .inbox-key {
+  color: var(--argus-accent);
+  border-color: var(--argus-accent);
+}
+
+.inbox-key.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.inbox-opt-label {
+  font-weight: 500;
+}
+
+.inbox-opt-desc {
+  color: var(--argus-text-muted);
+}
+
+.inbox-free {
+  margin-top: var(--sp-1);
+}
+
+.inbox-answer {
+  margin-top: var(--sp-1);
+  align-self: flex-start;
+}
+
+/* ---- Scope / verify / merge shared bits -------------------------------- */
+
+.inbox-line {
+  margin: 0;
+}
+
+.inbox-danger {
+  margin: 0;
+  color: var(--argus-danger);
+  font-weight: 500;
+}
+
+.inbox-cmd {
+  overflow-x: auto;
+}
+
+.inbox-pre {
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--sp-2);
+  white-space: pre;
+  background: var(--argus-surface-raised);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+}
+
+.inbox-files {
+  margin: 0;
+  padding-left: var(--sp-3);
+}
+
+.inbox-files li {
+  margin: 2px 0;
+}
+
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.inbox-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--argus-surface-raised);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+}
+
+.inbox-reveal label {
+  margin: 0;
+}
+
+.inbox-reveal .btn {
+  align-self: flex-start;
+}
+
+/* ---- Footer ------------------------------------------------------------ */
+
+.inbox-answered {
+  margin-top: var(--sp-3);
+  font-size: 12px;
+  color: var(--argus-text-muted);
+  text-align: center;
+}

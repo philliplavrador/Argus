@@ -79,6 +79,14 @@ export class Orchestrator {
   private mergeChain: Promise<void> = Promise.resolve();
   private disposed = false;
   private budgetTripped = false;
+  /**
+   * Synchronous scheduling reservation. A QUEUED task becomes ineligible only
+   * when its `task-started` event folds, which happens after an await — so two
+   * pump() calls in the same tick would otherwise both schedule it (observed
+   * live: duplicate provision → spurious task failure). Reserved at selection
+   * time, released once `task-started` is folded or the run attempt dies.
+   */
+  private readonly scheduling = new Set<TaskId>();
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -149,17 +157,22 @@ export class Orchestrator {
       return;
     }
     const tasks = this.fleet.taskOrder.map((id) => this.fleet.tasks[id]);
-    const liveCount = tasks.filter((t) => isLivePhase(t.phase)).length;
+    const liveCount = tasks.filter((t) => isLivePhase(t.phase)).length + this.scheduling.size;
     const capacity = this.fleet.config.maxConcurrentAgents - liveCount;
-    const queued = tasks.filter((t) => t.phase === 'QUEUED').slice(0, Math.max(0, capacity));
+    const queued = tasks
+      .filter((t) => t.phase === 'QUEUED' && !this.scheduling.has(t.spec.id))
+      .slice(0, Math.max(0, capacity));
     for (const t of queued) {
-      void this.runTask(t.spec.id).catch(async (err) => {
-        await this.append({
-          type: 'task-failed',
-          taskId: t.spec.id,
-          reason: `orchestrator error: ${String(err).slice(0, 300)}`,
-        });
-      });
+      this.scheduling.add(t.spec.id);
+      void this.runTask(t.spec.id)
+        .catch(async (err) => {
+          await this.append({
+            type: 'task-failed',
+            taskId: t.spec.id,
+            reason: `orchestrator error: ${String(err).slice(0, 300)}`,
+          });
+        })
+        .finally(() => this.scheduling.delete(t.spec.id));
     }
   }
 
@@ -170,6 +183,9 @@ export class Orchestrator {
     }
     const wt = await this.deps.worktrees.provision(taskId);
     await this.append({ type: 'task-started', taskId, worktreePath: wt.path, branch: wt.branch });
+    // The fold above made this task live; release the scheduling reservation
+    // so it stops double-counting against capacity.
+    this.scheduling.delete(taskId);
 
     if (this.fleet.config.installDepsOnProvision && this.deps.installCommand !== null) {
       await this.append({

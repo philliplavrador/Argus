@@ -1,1 +1,175 @@
-﻿
+/*
+ * Settings tab — a centered ~640px form of sectioned cards. All color, space,
+ * radius, and duration values reference theme.css tokens; a hex here is a bug.
+ */
+
+.settings-form {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.settings-section {
+  margin-bottom: var(--sp-4);
+}
+
+.settings-head {
+  margin: 0 0 var(--sp-2);
+  padding-left: var(--sp-1);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--argus-text-muted);
+}
+
+.settings-card {
+  margin-bottom: 0;
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+
+/* The last field in a card shouldn't add trailing space below itself. */
+.settings-card > .field:last-child,
+.settings-card > .hint:last-child,
+.settings-card > .workspace-action:last-child {
+  margin-bottom: var(--sp-1);
+}
+
+/* ---- Narrow numeric inputs -------------------------------------------- */
+
+.field.narrow input {
+  max-width: 180px;
+}
+
+/* ---- Radio option rows ------------------------------------------------- */
+
+.opt-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.opt {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2);
+  font-weight: 400;
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--argus-ease),
+    border-color var(--dur-fast) var(--argus-ease);
+}
+
+.opt:hover {
+  background: var(--argus-surface-raised);
+}
+
+.opt:has(input:checked) {
+  border-color: var(--argus-accent);
+  background: var(--argus-accent-subtle);
+}
+
+.opt input {
+  width: auto;
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--argus-accent);
+}
+
+.opt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.opt-name {
+  font-weight: 500;
+}
+
+.opt-desc {
+  color: var(--argus-text-muted);
+  font-size: 12px;
+}
+
+/* ---- Checkbox rows ----------------------------------------------------- */
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.check input {
+  width: auto;
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--argus-accent);
+}
+
+.check-label {
+  font-weight: 500;
+}
+
+.check-hint {
+  margin-left: calc(var(--sp-3) + var(--sp-1));
+}
+
+/* ---- System prompt preview -------------------------------------------- */
+
+.prompt-preview {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--sp-3);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--argus-surface-raised);
+  border: 1px solid var(--argus-border);
+  border-radius: var(--argus-radius-small);
+  color: var(--argus-text);
+}
+
+.caption {
+  margin-top: var(--sp-2);
+  font-size: 12px;
+  color: var(--argus-text-muted);
+}
+
+/* ---- Workspace actions ------------------------------------------------- */
+
+.workspace-action {
+  margin-bottom: var(--sp-3);
+}
+
+.workspace-action .hint {
+  margin-top: var(--sp-1);
+}
+
+/* ---- Footer ------------------------------------------------------------ */
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--argus-border);
+}
+
+.settings-footer .btn.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dirty-flag {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--argus-warn);
+}

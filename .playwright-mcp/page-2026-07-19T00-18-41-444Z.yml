@@ -1,0 +1,43 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]: naive @ 10/s
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - heading "task-0" [level=3] [ref=e5]
+      - generic [ref=e8]:
+        - generic [ref=e9]: idle
+        - generic [ref=e10]: 0.0s
+    - generic [ref=e11]:
+      - heading "task-1" [level=3] [ref=e12]
+      - generic [ref=e15]:
+        - generic [ref=e16]: idle
+        - generic [ref=e17]: 0.0s
+    - generic [ref=e18]:
+      - heading "task-2" [level=3] [ref=e19]
+      - generic [ref=e22]:
+        - generic [ref=e23]: idle
+        - generic [ref=e24]: 0.0s
+    - generic [ref=e25]:
+      - heading "task-3" [level=3] [ref=e26]
+      - generic [ref=e29]:
+        - generic [ref=e30]: idle
+        - generic [ref=e31]: 0.0s
+    - generic [ref=e32]:
+      - heading "task-4" [level=3] [ref=e33]
+      - generic [ref=e36]:
+        - generic [ref=e37]: idle
+        - generic [ref=e38]: 0.0s
+    - generic [ref=e39]:
+      - heading "task-5" [level=3] [ref=e40]
+      - generic [ref=e43]:
+        - generic [ref=e44]: idle
+        - generic [ref=e45]: 0.0s
+    - generic [ref=e46]:
+      - heading "task-6" [level=3] [ref=e47]
+      - generic [ref=e50]:
+        - generic [ref=e51]: idle
+        - generic [ref=e52]: 0.0s
+    - generic [ref=e53]:
+      - heading "task-7" [level=3] [ref=e54]
+      - generic [ref=e57]:
+        - generic [ref=e58]: idle
+        - generic [ref=e59]: 0.0s

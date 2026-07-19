@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "commonjs",
     "moduleResolution": "node",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -14,5 +14,5 @@
     "sourceMap": false,
     "declaration": false
   },
-  "include": ["src/lib", "test"]
+  "include": ["src", "test"]
 }
