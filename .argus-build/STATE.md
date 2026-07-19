@@ -1,40 +1,37 @@
 # Overnight build state — Argus v2
 
 - **Wall-clock start:** 2026-07-18 17:13 (UTC-7). 12h window ends ~05:13; build stops ~03:13 for integration/verification/report.
-- **Last updated:** 2026-07-18 17:16 (UTC-7)
-- **Branch:** `v2` (created from `main` @ 0a9f8d3). `main` untouched all night.
+- **Last updated:** 2026-07-18 17:38 (UTC-7)
+- **Branch:** `v2`, pushed. Commits so far: 245835a (scaffolding), 137ef8e (core types).
 
-## Resume protocol (for a fresh session after "resume overnight")
-1. FIRST: verify the Kiosk source repo untouched:
-   `git -C "D:/Projects/Kosik's Kiosk" status --porcelain` → must show exactly ` M .claude/settings.json`, branch `feat/restructure`.
-2. Read this file, then `git log --oneline v2`, then `.argus-build/decisions.md`.
-3. Trust the working tree over this file if they disagree.
-4. Continue from **Next action** below. Do not re-run recorded spikes. Ask nothing.
+## Resume protocol (fresh session, "resume overnight")
+1. FIRST verify the Kiosk source untouched:
+   `git -C "D:/Projects/Kosik's Kiosk" status --porcelain` → exactly ` M .claude/settings.json`, branch `feat/restructure`.
+2. Read this file → `git log --oneline v2` → `.argus-build/decisions.md`.
+3. Trust the working tree over this file.
+4. Continue from **Next action**. Do not re-run recorded spikes. Ask nothing.
 
 ## Fixture
-- Kiosk fixture cloned (--no-hardlinks) to:
-  `C:\Users\phill\AppData\Local\Temp\claude\d--Projects-Argus\0636ba7b-5673-4655-ba57-197243db7acd\scratchpad\kiosk-fixture`
-  On `feat/restructure`, clean, 443 files. The source's uncommitted `.claude/settings.json` change is NOT in the clone (expected; work around in the clone if ever needed).
-- The ORIGINAL at `D:/Projects/Kosik's Kiosk` is READ-ONLY. Never a cwd, never passed to agents, never written.
+- Clone at `C:\Users\phill\AppData\Local\Temp\claude\d--Projects-Argus\0636ba7b-5673-4655-ba57-197243db7acd\scratchpad\kiosk-fixture` (feat/restructure, clean, 443 files). Original is READ-ONLY forever.
 
-## Pre-flight (verified live 17:05–17:10, before go-word)
-- SDK `@anthropic-ai/claude-agent-sdk@0.3.214` installed in repo; CLI 2.1.214; Node 22.19.0.
-- `query()` end-to-end on subscription auth (ANTHROPIC_API_KEY unset): init→result 2.9s, haiku, cost $0.052, modelUsage present. Script: scratchpad/sdk-preflight.mjs.
-- Author confirmed: session won't prompt for permissions; login holds overnight; machine stays awake.
+## Pre-flight (verified live before go-word)
+- SDK 0.3.214 + CLI 2.1.214 + Node 22.19.0; query() end-to-end on subscription auth 2.9s/$0.052 (haiku). Author confirmed: no permission prompts, login holds, machine stays awake.
 
 ## Phase status
-- **Phase 0 (spikes): IN PROGRESS** — about to launch 4 spike agents (A concurrency, B canUseTool hold, C worktrees, D UI throughput) via Workflow, results to `.argus-spikes/`.
-- Phases 1–7: not started.
+- **Phase 0 spikes: RUNNING in background.** Workflow run `wf_f2ad55bf-4e4` (task wr8cpfnjs), 4 Opus agents → `.argus-spikes/{A-concurrency,B-canusetool,C-worktrees,D-ui-throughput}.md`. BARRIER: read all four before Phase 3 briefs are final.
+- **Phase 1 types: DONE (verified: `npm run typecheck` clean, commit 137ef8e).** `src/core/types.ts` is the immutable contract for all fan-out agents.
+- **Phase 2 pure core: RUNNING in background.** Workflow run `wf_e6dab8e9-332` (task ws9tebo0e), 3 Opus agents writing reducer/scope/profile + tests. Launched before the spike barrier deliberately (decision D4).
+- Phases 3–7: not started.
 
 ## Verified vs unverified
-- Verified by observation: SDK spawn works (see pre-flight above); fixture clone clean on feat/restructure.
-- Written-but-unverified: nothing yet.
+- Verified by observation: pre-flight SDK spawn; types.ts typechecks clean.
+- Written-but-unverified: nothing (Phase 2 agent output not yet reviewed/run by me).
 
 ## Spike results
-- (none yet)
+- (none returned yet)
 
 ## Next action
-Launch the Phase 0 spike workflow (4 parallel agents, Opus 4.8, writing to `.argus-spikes/A-concurrency.md` etc.), then draft `src/core/types.ts` while they run. Barrier: read all 4 spike reports before finalizing Phase 1 types.
+Wait for the two background workflows. On spike completion: read all four reports, update decisions.md, adjust types/constants if contradicted. On Phase 2 completion: run `npm run typecheck` + full `npm test` myself, review the three modules, commit as `feat(core)`. Then write Phase 3 briefs (AgentRunner/WorktreeManager/EventLog) incorporating spike B/C findings and launch Phase 3.
 
 ## Half-done / must finish or revert
-- Nothing in flight.
+- Two background workflows in flight (ids above). If resuming after death: check `.argus-spikes/*.md` and `src/core/{reducer,scope,profile}.ts` on disk to see what actually landed; workflow results are also in the journal at the transcript dirs recorded in this file's git history.
