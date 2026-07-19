@@ -1,0 +1,126 @@
+/*
+ * Argus theme tokens — the single source of visual truth (§10.1).
+ * Every color, font, radius, and duration in the webview references these.
+ * A component hard-coding a hex value is a bug.
+ *
+ * Mode resolution: `prefers-color-scheme` is the default signal; VS Code's
+ * body classes (vscode-light / vscode-dark / vscode-high-contrast) are
+ * authoritative when present. In high contrast the custom palette is dropped
+ * entirely in favor of the editor's own tokens — accessibility beats brand.
+ */
+
+:root {
+  /* Brand accent — identical in both modes. ★, primary buttons, active tab,
+     progress fill, focus rings. */
+  --argus-accent: #d97757;
+  --argus-accent-hover: #c86546;
+  --argus-accent-subtle: #d9775714;
+
+  /* Warm neutrals (yellow-shifted — this is most of what reads as "Claude"). */
+  --argus-bg: #faf9f5;
+  --argus-surface: #ffffff;
+  --argus-surface-raised: #f0eee6;
+  --argus-border: #e5e2da;
+  --argus-text: #1f1e1d;
+  --argus-text-muted: #6b6862;
+
+  /* Status */
+  --argus-success: #3d8f5f;
+  --argus-warn: #b07b2e;
+  --argus-danger: #b3453a;
+
+  /* Type: proportional for content; monospace ONLY for literal code —
+     paths, globs, diffs, commands. No shipped webfonts. */
+  --argus-font-ui: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  --argus-font-mono: ui-monospace, Consolas, "Cascadia Code", monospace;
+
+  /* 8px spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 16px;
+  --sp-4: 24px;
+  --sp-5: 32px;
+
+  /* Shape */
+  --argus-radius: 10px;
+  --argus-radius-small: 6px;
+  --argus-shadow: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+
+  /* Motion: short and purposeful. Nothing bounces. */
+  --argus-ease: cubic-bezier(0.25, 0.5, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-slow: 160ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --argus-accent-hover: #e08d6f;
+    --argus-accent-subtle: #d9775722;
+    --argus-bg: #1f1e1d;
+    --argus-surface: #262624;
+    --argus-surface-raised: #30302e;
+    --argus-border: #3a3936;
+    --argus-text: #f5f4ef;
+    --argus-text-muted: #a8a49b;
+    --argus-success: #5fb37f;
+    --argus-warn: #d9a04e;
+    --argus-danger: #e0685c;
+    --argus-shadow: 0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.2);
+  }
+}
+
+/* VS Code's own class wins over the media query when present. */
+body.vscode-light {
+  --argus-accent-hover: #c86546;
+  --argus-accent-subtle: #d9775714;
+  --argus-bg: #faf9f5;
+  --argus-surface: #ffffff;
+  --argus-surface-raised: #f0eee6;
+  --argus-border: #e5e2da;
+  --argus-text: #1f1e1d;
+  --argus-text-muted: #6b6862;
+  --argus-success: #3d8f5f;
+  --argus-warn: #b07b2e;
+  --argus-danger: #b3453a;
+  --argus-shadow: 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+body.vscode-dark {
+  --argus-accent-hover: #e08d6f;
+  --argus-accent-subtle: #d9775722;
+  --argus-bg: #1f1e1d;
+  --argus-surface: #262624;
+  --argus-surface-raised: #30302e;
+  --argus-border: #3a3936;
+  --argus-text: #f5f4ef;
+  --argus-text-muted: #a8a49b;
+  --argus-success: #5fb37f;
+  --argus-warn: #d9a04e;
+  --argus-danger: #e0685c;
+  --argus-shadow: 0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.2);
+}
+
+/* High contrast: drop the brand, defer to the editor. */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --argus-accent: var(--vscode-focusBorder);
+  --argus-accent-hover: var(--vscode-focusBorder);
+  --argus-accent-subtle: transparent;
+  --argus-bg: var(--vscode-editor-background);
+  --argus-surface: var(--vscode-editor-background);
+  --argus-surface-raised: var(--vscode-editor-background);
+  --argus-border: var(--vscode-contrastBorder);
+  --argus-text: var(--vscode-editor-foreground);
+  --argus-text-muted: var(--vscode-editor-foreground);
+  --argus-success: var(--vscode-editor-foreground);
+  --argus-warn: var(--vscode-editor-foreground);
+  --argus-danger: var(--vscode-errorForeground);
+  --argus-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-slow: 0ms;
+  }
+}

@@ -25,3 +25,19 @@ Revisit when: v2.x adds session-resume UX.
 ## D6 — Hand-rolled glob subset for scope matching, no dependency
 Scope globs support `**`, `*`, `?` only, matched case-insensitively, malformed-glob fails closed (treated as out of scope → escalates). Avoids shipping picomatch into both host and webview bundles and keeps the security-relevant matcher small and exhaustively tested. UI will steer users toward `dir/**` scopes.
 Revisit if: real usage needs braces/negation — swap in picomatch behind the same pathInScope signature.
+
+## D7 — WorktreeManager keeps an internal op queue even though Spike C refuted the need
+Spike C: 44 concurrent worktree adds, zero lock errors — serialization is not load-bearing. Kept anyway as a trivial promise-chain: provisioning is rare (once per task), removal ORDERING is genuinely critical (kill agent → wait → remove --force → verify gone → fallback rm -rf + prune), and serialized ops give deterministic logs. Cost ≈ zero.
+Revisit if: provisioning throughput ever matters (it won't at 3–4 concurrent tasks).
+
+## D8 — UI batching: 50ms postMessage flush, 100-line live tails
+Spike D: renderer holds 60fps unbatched to 20,000 ev/s — batching is for extension-host↔webview IPC economy, not FPS. 50ms ≈ 50× fewer messages at ≤50ms perceived latency; 100-line tail cap keeps 2× headroom under the measured-safe 200. EVENT_BATCH_MS set to 50 in types.ts.
+Revisit if: real webview use (Phase 6) shows IPC pressure — raise to 100ms, still verified smooth.
+
+## D9 — core.longpaths=true set per worktree at provisioning; removal is kill→force→verify→fallback
+Spike C: longpaths is unset at every scope on this machine; without it, deep paths break `git add`, make `git status` silently blind (rc=0!), and break worktree removal (deregisters but orphans the dir). Also `remove --force` while the agent lives orphans a locked dir git can no longer see. Both guardrails are mandatory, encoded in WorktreeManager.
+Revisit: never — this is measured Windows behavior.
+
+## D10 — Argus installs deps in fresh worktrees by default (`installDepsOnProvision: true`)
+Spike C measured per-worktree `npm install` on a warm cache at 6.6s/180MB — cheaper than robocopy and fully isolated (junctions confirmed unsafe: write-back through the junction lands in the shared source). Without install, verify gates die on missing node_modules. Config-off for non-node repos or speed.
+Revisit if: a target repo's cold-cache install is minutes — then pre-warm or disable.

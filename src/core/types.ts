@@ -296,6 +296,12 @@ export interface ArgusConfig {
   autoMerge: boolean;
   /** Repo-wide verify command used when a task declares no gates; null = none. */
   verifyCommand: string | null;
+  /**
+   * Run the repo's dependency install in each fresh worktree (Spike C: ~6.6s
+   * on a warm npm cache). Without it, verify gates in the worktree fail on
+   * missing node_modules.
+   */
+  installDepsOnProvision: boolean;
 }
 
 export const DEFAULT_CONFIG: ArgusConfig = {
@@ -308,6 +314,7 @@ export const DEFAULT_CONFIG: ArgusConfig = {
   fleetBudgetUsd: 50,
   autoMerge: false,
   verifyCommand: null,
+  installDepsOnProvision: true,
 };
 
 /** Detected repo layout, cached at `.argus/profile.json` (committed, regenerable). */
@@ -429,5 +436,9 @@ export type WebviewToHost =
 export const TOOL_TAIL_CAP = 50;
 /** Max characters of an agent text block kept in an `agent-text` event. */
 export const AGENT_TEXT_CAP = 240;
-/** Default host→webview event batch interval in ms (Spike D refines). */
-export const EVENT_BATCH_MS = 100;
+/**
+ * Host→webview event batch interval in ms. Spike D measured: the renderer
+ * holds 60fps even unbatched to 20k ev/s — batching exists for postMessage
+ * IPC economy. 50ms ≈ 50× fewer messages at ≤50ms perceived latency.
+ */
+export const EVENT_BATCH_MS = 50;
